@@ -4,7 +4,7 @@ save_data_on_exit = True
 save_history = True
 save_non_project_files = False
 project_type = 'empty-project-type'
-recent_files = ['script01_initial_analyses.py', 'aux01_user_functions.py', '..\\..\\..\\Drives compartilhados\\RECHB_SR_LAHIMAR_2022\\SR_PythonWD\\pt01_imagery_filtering.py']
+recent_files = ['initial_analyses.py']
 
 [main]
 version = 0.2.0

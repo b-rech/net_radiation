@@ -45,12 +45,14 @@ del basin, basin_coord
 
 # %% SELECTION OF LANDSAT DATA
 
-# Landsat 8 imagery filtering by bounds and sensors quality (0=worst, 9=best)
+# Landsat 8 imagery filtering by bounds, sensors quality (0=worst, 9=best) and
+# processing level (L2SP=reflectance and thermal bands are available)
 landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
             .filterBounds(basin_geom)
             .filter(ee.Filter.contains('.geo', basin_geom))
             .filter(ee.Filter.eq('IMAGE_QUALITY_OLI', 9))
-            .filter(ee.Filter.eq('IMAGE_QUALITY_TIRS', 9)))
+            .filter(ee.Filter.eq('IMAGE_QUALITY_TIRS', 9))
+            .filter(ee.Filter.eq('PROCESSING_LEVEL', 'L2SP')))
 
 
 # %% CLOUD COVER ASSESSMENT
@@ -210,6 +212,22 @@ for year, axis in zip(
     ax[axis].grid(visible=True, which='major', axis='both')
 
 ax[9].set(xticklabels=range(1, 13), xlabel='Mês')
+
+
+# %% ELEVATION DATA
+
+# Digital elevation model from NASADEM (reprocessing of SRTM data)
+dem = ee.Image("NASA/NASADEM_HGT/001")
+
+# Calculate slope. Units are degrees, range is [0, 90)
+# Convert slope to radians
+slope = ee.Terrain.slope(dem).multiply(np.pi/180)
+
+# Calculate aspect. Units are degrees where 0=N, 90=E, 180=S, 270=W
+# Transform data to 0=S, -90=E, 90=W, -180=N by subtracting 180
+# Convert to radians
+aspect = ee.Terrain.aspect(dem).subtract(180).multiply(np.pi/180)
+
 
 
 # %% IMAGES VISUALIZATION
