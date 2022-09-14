@@ -47,12 +47,14 @@ del basin, basin_coord
 
 # Landsat 8 imagery filtering by bounds, sensors quality (0=worst, 9=best) and
 # processing level (L2SP=reflectance and thermal bands are available)
+# Reproject to WGS84
 landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
             .filterBounds(basin_geom)
             .filter(ee.Filter.contains('.geo', basin_geom))
             .filter(ee.Filter.eq('IMAGE_QUALITY_OLI', 9))
             .filter(ee.Filter.eq('IMAGE_QUALITY_TIRS', 9))
-            .filter(ee.Filter.eq('PROCESSING_LEVEL', 'L2SP')))
+            .filter(ee.Filter.eq('PROCESSING_LEVEL', 'L2SP'))
+            .map(to_4326))
 
 
 # %% CLOUD COVER ASSESSMENT

@@ -121,3 +121,68 @@ def month_gaps(dataframe, date_col, start, end):
     print(f'\nLacks in {len(month_lack)} months')
 
     return month_lack
+
+
+# %% FUNCTION 03
+
+# Calculates parameters B, E and declination
+
+def declination(image):
+
+    """
+    This function calculates B, E and declination values and adds
+    to the image metadata
+    """
+
+    # Retrieval of month number
+    month = image.date().get('month')
+
+    # Retrieval of day number
+    day = image.date().get('day')
+
+    # Calculate the day of year (generates ee.Number)
+    day_of_year = ee.List(
+        [ee.Algorithms.If(month.eq(1), day),
+         ee.Algorithms.If(month.eq(2), day.add(31)),
+         ee.Algorithms.If(month.eq(3), day.add(59)),
+         ee.Algorithms.If(month.eq(4), day.add(90)),
+         ee.Algorithms.If(month.eq(5), day.add(120)),
+         ee.Algorithms.If(month.eq(6), day.add(151)),
+         ee.Algorithms.If(month.eq(7), day.add(181)),
+         ee.Algorithms.If(month.eq(8), day.add(212)),
+         ee.Algorithms.If(month.eq(9), day.add(243)),
+         ee.Algorithms.If(month.eq(10), day.add(273)),
+         ee.Algorithms.If(month.eq(11), day.add(304)),
+         ee.Algorithms.If(month.eq(12), day.add(334))]
+        ).getNumber(month.subtract(1))
+
+    # Calculate B (in radians)
+    B = day_of_year.subtract(1).multiply(2*np.pi/365)
+
+    # Calculate E
+    E = ee.Number(229.2).multiply(
+        ee.Number(0.000075)
+        .add(B.cos().multiply(0.001868))
+        .subtract(B.sin().multiply(0.032077))
+        .subtract(B.multiply(2).cos().multiply(0.014615))
+        .subtract(B.multiply(2).sin().multiply(0.04089)))
+
+    # Calculate declination (Spencer Equation, in radians)
+    declination = (ee.Number(0.006918)
+                   .subtract(B.cos().multiply(0.399912))
+                   .add(B.sin().multiply(0.070257))
+                   .subtract(B.multiply(2).cos().multiply(0.006758))
+                   .add(B.multiply(2).sin().multiply(0.000907))
+                   .subtract(B.multiply(3).cos().multiply(0.002697))
+                   .add(B.multiply(3).sin().multiply(0.00148)))
+
+    return image.set({'DAY_OF_YEAR':day_of_year, 'B':B, 'E':E,
+                      'DECLINATION':declination})
+
+
+# %% FUNCTION 04
+
+# Reproject L8 scenes to WGS84 (EPSG 4326)
+def to_4326(image):
+
+    return image.reproject(crs='EPSG:4326', scale=30)
