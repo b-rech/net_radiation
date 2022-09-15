@@ -186,3 +186,25 @@ def declination(image):
 def to_4326(image):
 
     return image.reproject(crs='EPSG:4326', scale=30)
+
+
+# %% FUNCTION 05
+
+# Apply scale factors to L8 reflectance and thermal bands
+def scale_L8(image):
+
+    optical_bands = image.select('SR_B.').multiply(0.0000275).add(-0.2)
+    thermal_band = image.select('ST_B10').multiply(0.00341802).add(149)
+
+    return (image.addBands(optical_bands, overwrite=True)
+            .addBands(thermal_band, overwrite=True))
+
+
+# %% FUNCTION 06
+
+# Create bands with pixel coordinates
+def pixels_coords(image):
+
+    coords = image.pixelCoordinates('EPSG:4326').rename(['long', 'lat'])
+
+    return image.addBands(coords)

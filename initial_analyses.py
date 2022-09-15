@@ -39,6 +39,12 @@ basin_coord = np.dstack(basin.geometry[0].geoms[0].exterior.coords.xy).tolist()
 # Creation of an ee.Geometry with the external coordinates
 basin_geom = ee.Geometry.Polygon(basin_coord)
 
+# Rectangle for clipping the images
+rectangle = ee.Geometry.Polygon([[-48.56174151517356, -27.42983615496652],
+                                 [-48.3482701411702, -27.441677519047225],
+                                 [-48.37428696492995, -27.68296346714984],
+                                 [-48.54973375043896, -27.67292048430085]])
+
 # Deleting not useful variables
 del basin, basin_coord
 
@@ -219,16 +225,37 @@ ax[9].set(xticklabels=range(1, 13), xlabel='Mês')
 # %% ELEVATION DATA
 
 # Digital elevation model from NASADEM (reprocessing of SRTM data)
-dem = ee.Image("NASA/NASADEM_HGT/001")
+dem = ee.Image("NASA/NASADEM_HGT/001").clip(rectangle)
 
 # Calculate slope. Units are degrees, range is [0, 90)
 # Convert slope to radians
-slope = ee.Terrain.slope(dem).multiply(np.pi/180)
+dem = dem.addBands(ee.Terrain.slope(dem).multiply(np.pi/180))
 
 # Calculate aspect. Units are degrees where 0=N, 90=E, 180=S, 270=W
 # Transform data to 0=S, -90=E, 90=W, -180=N by subtracting 180
 # Convert to radians
-aspect = ee.Terrain.aspect(dem).subtract(180).multiply(np.pi/180)
+dem = dem.addBands(ee.Terrain.aspect(dem).subtract(180).multiply(np.pi/180))
+
+
+# %% CLIP AND ADD DEM BAND TO EACH IMAGE
+
+# Function to clip the scenes
+def clip_rect(image):
+
+    return image.clip(rectangle)
+
+
+# Function to add dem as a band to each image
+def dem_bands(image):
+
+    return image.addBands(dem, names=['elevation', 'slope', 'aspect'])
+
+
+dataset4 = (dataset2
+            .map(clip_rect)         # Clip to the rectangle
+            .map(scale_L8)          # Scale the values
+            .map(dem_bands)         # Add DEM, slope and aspect
+            .map(pixels_coords))    # Add bands of lat and long coords
 
 
 
@@ -247,4 +274,5 @@ mapa = geemap.Map()
 mapa.addLayer(image, {'bands':['SR_B4', 'SR_B3', 'SR_B2'],'min':0, 'max':0.3})
 mapa.addLayer(clouds, {'palette':'red'})
 mapa.centerObject(basin_geom, 10)
+mapa.addLayer(rectangle)
 mapa.save('img2.html')
