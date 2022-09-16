@@ -98,20 +98,20 @@ def month_gaps(dataframe, date_col, start, end):
 
     month_lack = []
 
-    # Generates a list of lists [month, year] with observed values
+    # Generate list of lists [month, year] with observed values
     months_observed = np.dstack(
         [pd.DatetimeIndex(dataframe[date_col]).month.to_list(),
          pd.DatetimeIndex(dataframe[date_col]).year.to_list()]).tolist()
 
 
-    # Generates a list of lists [month, year] with desired values
+    # Generate list of lists [month, year] with desired values
     months_desired = np.dstack(
         [pd.date_range(start=start, end=end, freq='m', inclusive='both')
          .month.to_list(),
          pd.date_range(start=start, end=end, freq='m', inclusive='both')
          .year.to_list()]).tolist()
 
-    # Verifies wether the desired values are within the observed ones
+    # Verify wether the desired values are within the observed ones
     for n in range(0, len(months_desired[0])):
 
         if months_desired[0][n] not in months_observed[0]:
@@ -125,8 +125,7 @@ def month_gaps(dataframe, date_col, start, end):
 
 # %% FUNCTION 03
 
-# Calculates parameters B, E and declination
-
+# Calculate parameters B, E and declination
 def declination(image):
 
     """
@@ -134,13 +133,13 @@ def declination(image):
     to the image metadata
     """
 
-    # Retrieval of month number
+    # Retrieve month number
     month = image.date().get('month')
 
-    # Retrieval of day number
+    # Retrieve day number
     day = image.date().get('day')
 
-    # Calculate the day of year (generates ee.Number)
+    # Calculate day of year (generates ee.Number)
     day_of_year = ee.List(
         [ee.Algorithms.If(month.eq(1), day),
          ee.Algorithms.If(month.eq(2), day.add(31)),
@@ -176,6 +175,7 @@ def declination(image):
                    .subtract(B.multiply(3).cos().multiply(0.002697))
                    .add(B.multiply(3).sin().multiply(0.00148)))
 
+    # Set metadata
     return image.set({'DAY_OF_YEAR':day_of_year, 'B':B, 'E':E,
                       'DECLINATION':declination})
 
