@@ -96,8 +96,8 @@ def get_cloud_percent(image):
 # Map function over the collection
 dataset1 = landsat8.map(get_cloud_percent)
 
-# Filter images (cloudiness limit of 15%)
-dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 15))
+# Filter images (cloudiness limit of 10%)
+dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 10))
             .sort('system:time_start'))
 
 
@@ -133,10 +133,10 @@ def dem_bands(image):
 
 # Map functions
 dataset3 = (dataset2
-            .map(clip_area)         # Clip to the smaller area
             .map(scale_L8)          # Scale the values
             .map(dem_bands)         # Add DEM, slope and aspect
-            .map(pixels_coords))    # Add bands of lat and long coords
+            .map(pixels_coords)    # Add bands of lat and long coords
+            .map(clip_area))         # Clip to the smaller area
 
 
 # %% CALCULATE DECLINATION AND SOLAR TIME
@@ -186,6 +186,13 @@ def hour_angle(image):
 
 # Map function over collection
 dataset5 = dataset4.map(hour_angle)
+
+
+# %% GNERATION OF THETA BANDS
+
+# Calculate theta_hor and theta_rel
+dataset6 = dataset5.map(theta_hor).map(theta_rel)
+
 
 # %%
 
@@ -243,6 +250,8 @@ ax[9].set(xticklabels=range(1, 13), xlabel='Mês')
 image = (ee.Image('LANDSAT/LC08/C02/T1_L2/LC08_220079_20130417')
          .select('SR_B.').multiply(0.0000275).add(-0.2))
 
+theta_band = dataset6.first().select('theta_rel')
+
 qa_pixel = (ee.Image('LANDSAT/LC08/C02/T1_L2/LC08_219079_20140208')
             .select('QA_PIXEL'))
 
@@ -251,6 +260,7 @@ clouds = clouds.updateMask(clouds)
 
 mapa = geemap.Map()
 mapa.addLayer(image, {'bands':['SR_B4', 'SR_B3', 'SR_B2'],'min':0, 'max':0.3})
+mapa.addLayer(theta_band, {'min':-np.pi/2, 'max':np.pi/2})
 mapa.addLayer(clouds, {'palette':'red'})
 mapa.centerObject(basin_geom, 10)
 mapa.addLayer(rectangle)

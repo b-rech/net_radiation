@@ -208,3 +208,60 @@ def pixels_coords(image):
     coords = image.pixelCoordinates('EPSG:4326').rename(['long', 'lat'])
 
     return image.addBands(coords)
+
+
+# %% FUNCTION 07
+
+# Calculate theta_rel
+def theta_hor(image):
+
+    # Band with pixel latitudes
+    lat = image.select('lat')
+
+    # Declination
+    declination = image.getNumber('DECLINATION')
+
+    # Hour angle
+    hour_angle = image.getNumber('HOUR_ANGLE')
+
+    # Calculate theta
+    theta_hor = ((lat.sin().multiply(declination.sin()))
+                 .add(lat.cos()
+                     .multiply(declination.cos())
+                     .multiply(hour_angle.cos())))
+
+    return image.addBands(theta_hor.rename('theta_hor'))
+
+
+# %% FUNCTION 08
+
+# Calculate theta_rel
+def theta_rel(image):
+
+    # Band with pixel latitudes
+    lat = image.select('lat')
+
+    # Declination
+    declination = image.getNumber('DECLINATION')
+
+    # Hour angle
+    hour_angle = image.getNumber('HOUR_ANGLE')
+
+    # Slope band
+    slope = image.select('slope')
+
+    # Aspect band
+    aspect = image.select('aspect')
+
+    # Calculate theta_rel
+    theta_rel = ((lat.sin().multiply(slope.cos()).multiply(declination.sin()))
+                 .subtract(lat.cos().multiply(slope.sin())
+                            .multiply(aspect.cos()).multiply(declination.sin()))
+                 .add(lat.cos().multiply(slope.cos()).multiply(hour_angle.cos())
+                      .multiply(declination.cos()))
+                 .add(lat.sin().multiply(slope.sin()).multiply(aspect.cos())
+                      .multiply(hour_angle.cos()).multiply(declination.cos()))
+                 .add(aspect.sin().multiply(slope.sin())
+                      .multiply(hour_angle.sin()).multiply(declination.cos())))
+
+    return image.addBands(theta_rel.rename('theta_rel'))
