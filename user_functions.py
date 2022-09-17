@@ -183,9 +183,9 @@ def declination(image):
 # %% FUNCTION 04
 
 # Reproject L8 scenes to WGS84 (EPSG 4326)
-def to_4326(image):
+def to_31982(image):
 
-    return image.reproject(crs='EPSG:4326', scale=30)
+    return image.reproject(crs='EPSG:31982', scale=30)
 
 
 # %% FUNCTION 05
@@ -205,7 +205,7 @@ def scale_L8(image):
 # Create bands with pixel coordinates
 def pixels_coords(image):
 
-    coords = image.pixelCoordinates('EPSG:4326').rename(['long', 'lat'])
+    coords = image.pixelLonLat().rename(['long', 'lat'])
 
     return image.addBands(coords)
 
@@ -265,3 +265,26 @@ def theta_rel(image):
                       .multiply(hour_angle.sin()).multiply(declination.cos())))
 
     return image.addBands(theta_rel.rename('theta_rel'))
+
+
+# %% FUNCTION 09
+
+# Calculate albedo using model proposed by Angelini et al. (2021)
+def albedo(image):
+
+    b2 = image.select('SR_B2')
+    b3 = image.select('SR_B3')
+    b4 = image.select('SR_B4')
+    b5 = image.select('SR_B5')
+    b6 = image.select('SR_B6')
+    b7 = image.select('SR_B7')
+
+    albedo = (b2.multiply(0.4739)
+              .add(b3.multiply(-0.4372))
+              .add(b4.multiply(0.1652))
+              .add(b5.multiply(0.2831))
+              .add(b6.multiply(0.1072))
+              .add(b7.multiply(0.1029))
+              .add(0.0366))
+
+    return image.addBands(albedo.rename('albedo'))

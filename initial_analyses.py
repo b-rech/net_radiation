@@ -40,10 +40,8 @@ basin_coord = np.dstack(basin.geometry[0].geoms[0].exterior.coords.xy).tolist()
 basin_geom = ee.Geometry.Polygon(basin_coord)
 
 # Create area for clipping images
-area = ee.Geometry.Polygon([[-48.56174151517356, -27.42983615496652],
-                            [-48.3482701411702, -27.441677519047225],
-                            [-48.37428696492995, -27.68296346714984],
-                            [-48.54973375043896, -27.67292048430085]])
+rect = ee.Geometry.Rectangle([-48.37428696492995, -27.68296346714984,
+                            -48.56174151517356, -27.42983615496652])
 
 # Delete not useful variables
 del basin, basin_coord
@@ -61,7 +59,7 @@ landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
             .filter(ee.Filter.contains('.geo', basin_geom))
             .filter(ee.Filter.eq('IMAGE_QUALITY_OLI', 9))
             .filter(ee.Filter.eq('IMAGE_QUALITY_TIRS', 9))
-            .map(to_4326))
+            .map(to_31982))
 
 
 # %% CLOUD COVER ASSESSMENT
@@ -105,7 +103,7 @@ dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 10))
 
 # Digital elevation model from NASADEM (reprocessing of SRTM data)
 # Clip to a smaller area
-dem = ee.Image("NASA/NASADEM_HGT/001").clip(area)
+dem = ee.Image("NASA/NASADEM_HGT/001")
 
 # Calculate slope. Units are degrees, range is [0, 90)
 # Convert slope to radians
@@ -117,13 +115,13 @@ dem = dem.addBands(ee.Terrain.slope(dem).multiply(np.pi/180))
 dem = dem.addBands(ee.Terrain.aspect(dem).subtract(180).multiply(np.pi/180))
 
 
-# %% CLIP ADD DEM BAND, ADD COORDINATES
+# %% CLIP, ADD DEM BAND, ADD COORDINATES
 
 
 # Function to clip the scenes
 def clip_area(image):
 
-    return image.clip(area)
+    return image.clip(rect)
 
 
 # Function to add dem as a band to each image
@@ -136,8 +134,8 @@ dataset3 = (dataset2
             .map(scale_L8)          # Scale the values
             .map(dem_bands)         # Add DEM, slope and aspect
             .map(pixels_coords)    # Add bands of lat and long coords
-            .map(clip_area))         # Clip to the smaller area
-
+            .map(clip_area)         # Clip to the smaller area
+            .map(to_31982))
 
 # %% CALCULATE DECLINATION AND SOLAR TIME
 
@@ -188,10 +186,13 @@ def hour_angle(image):
 dataset5 = dataset4.map(hour_angle)
 
 
-# %% GNERATION OF THETA BANDS
+# %% GENERATION OF THETA BANDS AND ALBEDO
 
 # Calculate theta_hor and theta_rel
 dataset6 = dataset5.map(theta_hor).map(theta_rel)
+
+# Calculate albedo
+dataset7 = dataset6.map(albedo)
 
 
 # %%
@@ -247,21 +248,21 @@ ax[9].set(xticklabels=range(1, 13), xlabel='Mês')
 
 # %% IMAGES VISUALIZATION
 
-image = (ee.Image('LANDSAT/LC08/C02/T1_L2/LC08_220079_20130417')
-         .select('SR_B.').multiply(0.0000275).add(-0.2))
+image = dataset7.first()
 
 theta_band = dataset6.first().select('theta_rel')
 
-qa_pixel = (ee.Image('LANDSAT/LC08/C02/T1_L2/LC08_219079_20140208')
-            .select('QA_PIXEL'))
+qa_pixel = (image.select('QA_PIXEL'))
 
 clouds = qa_pixel.bitwiseAnd(1<<6).eq(0)
 clouds = clouds.updateMask(clouds)
 
 mapa = geemap.Map()
+mapa.addLayer(image.select('elevation'), {'min':0, 'max':500})
+mapa.addLayer(image.select('albedo'), {'color':'reds'})
 mapa.addLayer(image, {'bands':['SR_B4', 'SR_B3', 'SR_B2'],'min':0, 'max':0.3})
 mapa.addLayer(theta_band, {'min':-np.pi/2, 'max':np.pi/2})
 mapa.addLayer(clouds, {'palette':'red'})
 mapa.centerObject(basin_geom, 10)
-mapa.addLayer(rectangle)
+mapa.addLayer(rect)
 mapa.save('img2.html')
