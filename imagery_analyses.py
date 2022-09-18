@@ -7,6 +7,8 @@ LABORATORY OF MARINE HYDRAULICS
 
 Created on Sat Sep  3 15:41:01 2022
 Author: Bruno Rech (b.rech@outlook.com)
+
+SCRIPT 2/3 - IMAGERY ANALYSES
 """
 
 # %% INITIALIZATION
@@ -39,12 +41,9 @@ basin_coord = np.dstack(basin.geometry[0].geoms[0].exterior.coords.xy).tolist()
 # Create ee.Geometry with external coordinates
 basin_geom = ee.Geometry.Polygon(basin_coord)
 
-# Create area for clipping images
+# Create rectangle for clipping images
 rect = ee.Geometry.Rectangle([-48.37428696492995, -27.68296346714984,
                             -48.56174151517356, -27.42983615496652])
-
-# Delete not useful variables
-del basin, basin_coord
 
 
 # %% SELECTION OF LANDSAT DATA
@@ -53,7 +52,7 @@ del basin, basin_coord
     # by bounds;
     # by processing level (L2SP = optical and thermal bands);
     # by sensors quality (0=worst, 9=best);
-# Reproject to WGS84
+# Reproject to SIRGAS 2000 UTM zone 22S
 landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
             .filterBounds(basin_geom)
             .filter(ee.Filter.contains('.geo', basin_geom))
@@ -94,15 +93,15 @@ def get_cloud_percent(image):
 # Map function over the collection
 dataset1 = landsat8.map(get_cloud_percent)
 
-# Filter images (cloudiness limit of 10%)
+# Filter images (cloudiness limit of 10%) and apply cloud mask
 dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 10))
+            .map(cloud_mask)
             .sort('system:time_start'))
 
 
 # %% ELEVATION DATA
 
 # Digital elevation model from NASADEM (reprocessing of SRTM data)
-# Clip to a smaller area
 dem = ee.Image("NASA/NASADEM_HGT/001")
 
 # Calculate slope. Units are degrees, range is [0, 90)
@@ -115,11 +114,10 @@ dem = dem.addBands(ee.Terrain.slope(dem).multiply(np.pi/180))
 dem = dem.addBands(ee.Terrain.aspect(dem).subtract(180).multiply(np.pi/180))
 
 
-# %% CLIP, ADD DEM BAND, ADD COORDINATES
-
+# %% CLIP, ADD DEM BANDS, RETRIEVE COORDINATES
 
 # Function to clip the scenes
-def clip_area(image):
+def clip_rect(image):
 
     return image.clip(rect)
 
@@ -129,22 +127,24 @@ def dem_bands(image):
 
     return image.addBands(dem, names=['elevation', 'slope', 'aspect'])
 
+
 # Map functions
 dataset3 = (dataset2
-            .map(scale_L8)          # Scale the values
+            .map(scale_L8)          # Scale the bands
             .map(dem_bands)         # Add DEM, slope and aspect
-            .map(pixels_coords)    # Add bands of lat and long coords
-            .map(clip_area)         # Clip to the smaller area
-            .map(to_31982))
+            .map(pixels_coords)     # Add bands of lat and long coords
+            .map(clip_rect)         # Clip to the rectangle
+            .map(to_31982))         # Reproject to SIRGAS 2000 UTM zone 22S
+
 
 # %% CALCULATE DECLINATION AND SOLAR TIME
-
 
 # Calculate declination, B, E and day of year
 dataset4 = dataset3.map(declination)
 
 # Get centroid longitude for the area of interest (basin)
 basin_long = basin_geom.centroid().coordinates().getNumber(0).abs()
+
 
 # Function to calculate hour angle
 def hour_angle(image):
@@ -153,7 +153,7 @@ def hour_angle(image):
     This function calculates the hour angle of the scene.
     """
 
-    # Retrieve parameter E (from minutes to seconds)
+    # Retrieve parameter E (convert to seconds)
     E = image.getNumber('E').multiply(60)
 
     # Retrieve local time (seconds)
@@ -186,48 +186,36 @@ def hour_angle(image):
 dataset5 = dataset4.map(hour_angle)
 
 
-# %% GENERATION OF THETA BANDS AND ALBEDO
+# %% GENERATION OF SOLAR ANGLE BANDS AND ALBEDO
 
-# Calculate theta_hor and theta_rel
+# Calculate solar zenith (theta_hor) and solar incidence angle (theta_rel)
 dataset6 = dataset5.map(theta_hor).map(theta_rel)
 
 # Calculate albedo
 dataset7 = dataset6.map(albedo)
 
 
-# %%
-
-# Retrieve metadata
-info_list2 = dataset2.getInfo()['features']
-info_df2 = list_info_df(info_list2)
-
-# Temporal gaps
-time_gaps = month_gaps(info_df2, 'date', '2013-03-01', '2022-08-31')
-
-
 # %% PLOT OF TEMPORAL AVAILABILITY
 
+# Retrieve collection metadata
+info_list = dataset7.getInfo()['features']
+info_df = list_info_df(info_list)
+
 # Extraction of years
-info_df2['year'] = pd.DatetimeIndex(info_df2.date).year
+info_df['year'] = pd.DatetimeIndex(info_df.date).year
 
-# info_df3['year'] = pd.DatetimeIndex(info_df3.date).year
-
-# Creation of the figure
+# Create figure
 plot, ax = plt.subplots(nrows=10, figsize=(10, 5), dpi=300)
 sns.set_style('white')
 
-# Iterate to each axis (year)
+# Iterate on each axis (year)
 for year, axis in zip(
-        range(info_df2.year.min(), info_df2.year.max() + 1),
+        range(info_df.year.min(), info_df.year.max() + 1),
         range(0, 10)):
 
     # Total available images (with good cloud cover)
-    sns.scatterplot(x='date', y=0, data=info_df2[info_df2.year == year],
+    sns.scatterplot(x='date', y=0, data=info_df[info_df.year == year],
                     color='green', ax=ax[axis])
-
-    # Selected images
-    #sns.scatterplot(x='date', y=0, data=info_df3[info_df3.year == year],
-               #     color='#006d2c', ax=ax[axis])
 
     # Styling
     ax[axis].set(xlim=(np.datetime64(f'{year}-01-01'),
@@ -240,15 +228,9 @@ for year, axis in zip(
 ax[9].set(xticklabels=range(1, 13), xlabel='Mês')
 
 
-
-
-
-
-
-
 # %% IMAGES VISUALIZATION
 
-image = dataset7.first()
+image = ee.Image(dataset7.toList(10).get(1))
 
 theta_band = dataset6.first().select('theta_rel')
 
@@ -259,8 +241,8 @@ clouds = clouds.updateMask(clouds)
 
 mapa = geemap.Map()
 mapa.addLayer(image.select('elevation'), {'min':0, 'max':500})
-mapa.addLayer(image.select('albedo'), {'color':'reds'})
-mapa.addLayer(image, {'bands':['SR_B4', 'SR_B3', 'SR_B2'],'min':0, 'max':0.3})
+mapa.addLayer(image.select('albedo'), {'min':0, 'max':1})
+mapa.addLayer(image, {'bands':['SR_B4', 'SR_B3', 'SR_B2'],'min':0, 'max':0.15})
 mapa.addLayer(theta_band, {'min':-np.pi/2, 'max':np.pi/2})
 mapa.addLayer(clouds, {'palette':'red'})
 mapa.centerObject(basin_geom, 10)

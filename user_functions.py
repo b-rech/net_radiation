@@ -7,6 +7,8 @@ LABORATORY OF MARINE HYDRAULICS
 
 Created on Sun Sep  4 13:30:30 2022
 Author: Bruno Rech (b.rech@outlook.com)
+
+SCRIPT 1/3 - AUXILIAR FUNCTIONS
 """
 
 # %% INITIALIZATION
@@ -20,7 +22,7 @@ import numpy as np
 ee.Initialize()
 
 
-# %% FUNCTION 01
+# %% FUNCTION 01: GENERATE METADATA DATAFRAME
 
 # Function to generate a metadata dataframe
 def list_info_df(properties_list):
@@ -86,9 +88,9 @@ def list_info_df(properties_list):
     return infos
 
 
-# %% FUNCTION 02
+# %% FUNCTION 02: IDENTIFY TIME GAPS
 
-# Function to identify temporal gaps
+# Identify temporal gaps
 def month_gaps(dataframe, date_col, start, end):
 
     """
@@ -123,7 +125,20 @@ def month_gaps(dataframe, date_col, start, end):
     return month_lack
 
 
-# %% FUNCTION 03
+# %% FUNCTION 03: CLOUD MASK
+
+# Apply a cloud mask to the images
+def cloud_mask(image):
+
+    # Select cloud band
+    # It is assigned 1 to the selected pixels and 0 to the others
+    # Bit 6: 1 to clear sky and 0 to cloud or dilated cloud
+    clear = image.select('QA_PIXEL').bitwiseAnd(1<<6).neq(0)
+
+    return image.updateMask(clear)
+
+
+# %% FUNCTION 04: RETRIEVE DAY OF YEAR B, E AND DECLINATION
 
 # Calculate parameters B, E and declination
 def declination(image):
@@ -133,10 +148,10 @@ def declination(image):
     to the image metadata
     """
 
-    # Retrieve month number
+    # Retrieve month
     month = image.date().get('month')
 
-    # Retrieve day number
+    # Retrieve day
     day = image.date().get('day')
 
     # Calculate day of year (generates ee.Number)
@@ -158,7 +173,7 @@ def declination(image):
     # Calculate B (in radians)
     B = day_of_year.subtract(1).multiply(2*np.pi/365)
 
-    # Calculate E
+    # Calculate E (in minutes)
     E = ee.Number(229.2).multiply(
         ee.Number(0.000075)
         .add(B.cos().multiply(0.001868))
@@ -180,15 +195,15 @@ def declination(image):
                       'DECLINATION':declination})
 
 
-# %% FUNCTION 04
+# %% FUNCTION 05: REPROJECT TO SIRGAS 2000 UTM ZONE 22S
 
-# Reproject L8 scenes to WGS84 (EPSG 4326)
+# Reproject L8 scenes
 def to_31982(image):
 
     return image.reproject(crs='EPSG:31982', scale=30)
 
 
-# %% FUNCTION 05
+# %% FUNCTION 06: APPLY SCALE AND OFFSET FACTORS
 
 # Apply scale factors to L8 reflectance and thermal bands
 def scale_L8(image):
@@ -200,7 +215,7 @@ def scale_L8(image):
             .addBands(thermal_band, overwrite=True))
 
 
-# %% FUNCTION 06
+# %% FUNCTION 07: CREATE PIXEL LAT/LONG BANDS
 
 # Create bands with pixel coordinates
 def pixels_coords(image):
@@ -210,9 +225,9 @@ def pixels_coords(image):
     return image.addBands(coords)
 
 
-# %% FUNCTION 07
+# %% FUNCTION 08: RETRIEVE SOLAR ZENITH ANGLE OVER A HORIZONTAL SURFACE
 
-# Calculate theta_rel
+# Calculate theta_hor
 def theta_hor(image):
 
     # Band with pixel latitudes
@@ -233,7 +248,7 @@ def theta_hor(image):
     return image.addBands(theta_hor.rename('theta_hor'))
 
 
-# %% FUNCTION 08
+# %% FUNCTION 09: RETRIEVE SOLAR INCIDENCE ANGLE
 
 # Calculate theta_rel
 def theta_rel(image):
@@ -267,11 +282,25 @@ def theta_rel(image):
     return image.addBands(theta_rel.rename('theta_rel'))
 
 
-# %% FUNCTION 09
+# %% FUNCTION 10: RETRIEVE ATMOSPHERIC PRESSURE
+
+# Calculate atmospheric pressure (kPa)
+def atm_pressure(image):
+
+    elev = image.select('elevation')
+
+    atm_pressure = (((elev.multiply(-0.0065).add(293))
+                     .divide(293)).pow(5.26)).multiply(101.3)
+
+    return image.addBands(atm_pressure.rename('p_atm'))
+
+
+# %% FUNCTION 11: ALBEDO RETRIEVAL
 
 # Calculate albedo using model proposed by Angelini et al. (2021)
 def albedo(image):
 
+    # Select required bands
     b2 = image.select('SR_B2')
     b3 = image.select('SR_B3')
     b4 = image.select('SR_B4')
@@ -279,6 +308,7 @@ def albedo(image):
     b6 = image.select('SR_B6')
     b7 = image.select('SR_B7')
 
+    # Apply model (equation)
     albedo = (b2.multiply(0.4739)
               .add(b3.multiply(-0.4372))
               .add(b4.multiply(0.1652))
