@@ -11,7 +11,7 @@ Author: Bruno Rech (b.rech@outlook.com)
 SCRIPT 2/3 - IMAGERY ANALYSES
 """
 
-# %% INITIALIZATION
+# %% PART I: DATA PREPARATION
 
 # Required libraries
 import ee
@@ -137,7 +137,7 @@ dataset3 = (dataset2
             .map(to_31982))         # Reproject to SIRGAS 2000 UTM zone 22S
 
 
-# %% CALCULATE DECLINATION AND SOLAR TIME
+# %% PART II: SHORTWAVE RADIATION
 
 # Calculate declination, B, E and day of year
 dataset4 = dataset3.map(declination)
@@ -193,6 +193,28 @@ dataset6 = dataset5.map(theta_hor).map(theta_rel)
 
 # Calculate albedo
 dataset7 = dataset6.map(albedo)
+
+
+
+# %% PART 3: LONGWAVE RADIATION ###############################################
+
+# 3.1 UPWARD LONGWAVE RADIATION
+
+# 3.1.1 SAVI Retrieval
+
+# Set L value
+L = 0.5
+
+
+
+
+
+
+
+
+
+
+
 
 
 # %% PLOT OF TEMPORAL AVAILABILITY

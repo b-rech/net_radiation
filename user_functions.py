@@ -318,3 +318,28 @@ def albedo(image):
               .add(0.0366))
 
     return image.addBands(albedo.rename('albedo'))
+
+
+# %% FUNCTION 12: SAVI AND LAI
+
+# Calculate Soil-Adjusted Vegetation Index
+def savi_lai(image):
+
+    # Select required bands
+    red = image.select('SR_B4')
+    nir = image.select('SR_B5')
+
+    # Set the value for L
+    L = 0.5
+
+    # Calculate SAVI
+    savi = nir.subtract(red).divide(nir.add(red).add(L)).multiply(1 + L)
+
+    # Calculate LAI
+    raw_lai = savi.multiply(-1).add(0.69).divide(0.59).log().divide(-0.91)
+
+    # LAI <= 3
+    lai_lte3 = lai.lte(3)
+
+    # Apply mask to keep the pixels <= 3 and attribute 3 to masked pixels
+    lai = raw_lai.updateMask(lai_lte3).unmask(3)
