@@ -11,7 +11,12 @@ Author: Bruno Rech (b.rech@outlook.com)
 SCRIPT 2/3 - IMAGERY ANALYSES
 """
 
-# %% PART I: DATA PREPARATION
+# %% 1 DATA PREPARATION #######################################################
+
+# This part of the code prepares the data to the sebsequent calculations.
+
+# -----------------------------------------------------------------------------
+# 1.1 LIBRARIES AND SCRIPTS
 
 # Required libraries
 import ee
@@ -29,28 +34,34 @@ from user_functions import *
 #ee.Authenticate()
 ee.Initialize()
 
+# -----------------------------------------------------------------------------
+# 1.2 SHAPEFILE UPLOADING AND CONVERSION
 
-# %% SHAPEFILE UPLOADING AND CONVERSION
-
-# Upload contours of the basin
+# Upload contours of the basin and lagoon
 basin = gpd.read_file('vectors\\vector_layers.gpkg', layer='basin_area')
+lagoon = gpd.read_file('vectors\\vector_layers.gpkg', layer='lagoon')
 
 # Extract coordinates
-basin_coord = np.dstack(basin.geometry[0].geoms[0].exterior.coords.xy).tolist()
+basin_coord = np.dstack(basin.geometry[0].geoms[0]
+                        .exterior.coords.xy).tolist()
+
+lagoon_coord = np.dstack(lagoon.geometry[0].geoms[0]
+                         .exterior.coords.xy).tolist()
 
 # Create ee.Geometry with external coordinates
 basin_geom = ee.Geometry.Polygon(basin_coord)
+lagoon_geom = ee.Geometry.Polygon(lagoon_coord)
 
 # Create rectangle for clipping images
 rect = ee.Geometry.Rectangle([-48.37428696492995, -27.68296346714984,
                             -48.56174151517356, -27.42983615496652])
 
-
-# %% SELECTION OF LANDSAT DATA
+# -----------------------------------------------------------------------------
+# 1.3 SELECTION OF LANDSAT DATA
 
 # Filter Landsat 8 imagery:
     # by bounds;
-    # by processing level (L2SP = optical and thermal bands);
+    # by processing level (L2SP = both optical and thermal bands);
     # by sensors quality (0=worst, 9=best);
 # Reproject to SIRGAS 2000 UTM zone 22S
 landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
@@ -61,9 +72,10 @@ landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
             .map(to_31982))
 
 
-# %% CLOUD COVER ASSESSMENT
+# -----------------------------------------------------------------------------
+# 1.4 CLOUD COVER ASSESSMENT
 
-# Function to be mapped over the collection
+# Function retrieve cloud cover over the area of interest
 def get_cloud_percent(image):
 
     """
@@ -78,13 +90,11 @@ def get_cloud_percent(image):
 
     # Generate cloud proportion
     # Since the values are just 0 e 1, the mean is equal to the proportion
-    # An ee.Dictionary is generated with a key renamed to "cloudiness"
-    # The proportion is multiplied by 100 to get a percentual
+    # An ee.Dictionary is generated with the key renamed to "cloudiness"
     cloud_percent = cloud_band.reduceRegion(**{
         'reducer':ee.Reducer.mean(),
         'geometry':basin_geom,
-        'scale':30}).rename(['QA_PIXEL'], ['CLOUDINESS'], True)\
-        .map(lambda key, value : ee.Number(value).multiply(100))
+        'scale':30}).rename(['QA_PIXEL'], ['CLOUDINESS'], True)
 
     # Add information to image metadata
     return image.set(cloud_percent)
@@ -94,14 +104,13 @@ def get_cloud_percent(image):
 dataset1 = landsat8.map(get_cloud_percent)
 
 # Filter images (cloudiness limit of 10%) and apply cloud mask
-dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 10))
-            .map(cloud_mask)
-            .sort('system:time_start'))
+dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 0.10))
+            .map(cloud_mask).sort('system:time_start'))
 
+# -----------------------------------------------------------------------------
+# 1.5 ELEVATION DATA
 
-# %% ELEVATION DATA
-
-# Digital elevation model from NASADEM (reprocessing of SRTM data)
+# Digital elevation model from NASADEM
 dem = ee.Image("NASA/NASADEM_HGT/001")
 
 # Calculate slope. Units are degrees, range is [0, 90)
@@ -114,9 +123,10 @@ dem = dem.addBands(ee.Terrain.slope(dem).multiply(np.pi/180))
 dem = dem.addBands(ee.Terrain.aspect(dem).subtract(180).multiply(np.pi/180))
 
 
-# %% CLIP, ADD DEM BANDS, RETRIEVE COORDINATES
+# -----------------------------------------------------------------------------
+# 1.6 FINAL SCENE ADJUSTMENTS
 
-# Function to clip the scenes
+# Function to clip the scenes to the created rectangle
 def clip_rect(image):
 
     return image.clip(rect)
@@ -137,7 +147,12 @@ dataset3 = (dataset2
             .map(to_31982))         # Reproject to SIRGAS 2000 UTM zone 22S
 
 
-# %% PART II: SHORTWAVE RADIATION
+# %% 2 SHORTWAVE RADIATION ####################################################
+
+# This part of the code provides the calculation of shortwave radiation.
+
+# -----------------------------------------------------------------------------
+# 2.1 RETRIEVAL OF ANGULAR PARAMETERS
 
 # Calculate declination, B, E and day of year
 dataset4 = dataset3.map(declination)
@@ -146,7 +161,7 @@ dataset4 = dataset3.map(declination)
 basin_long = basin_geom.centroid().coordinates().getNumber(0).abs()
 
 
-# Function to calculate hour angle
+# Function to calculate hour angle (constant over each scene)
 def hour_angle(image):
 
     """
@@ -185,36 +200,68 @@ def hour_angle(image):
 # Map function over collection
 dataset5 = dataset4.map(hour_angle)
 
-
-# %% GENERATION OF SOLAR ANGLE BANDS AND ALBEDO
-
-# Calculate solar zenith (theta_hor) and solar incidence angle (theta_rel)
+# Calculate solar zenith over a horizontal surface (theta_hor) and solar
+# incidence angle (theta_rel)
 dataset6 = dataset5.map(theta_hor).map(theta_rel)
+
+
+# -----------------------------------------------------------------------------
+# 2.2 DOWNWARD SHORTWAVE RADIATION
+
+
+# -----------------------------------------------------------------------------
+# 2.3 UPWARD SHORTWAVE RADIATION
 
 # Calculate albedo
 dataset7 = dataset6.map(albedo)
-
 
 
 # %% PART 3: LONGWAVE RADIATION ###############################################
 
 # 3.1 UPWARD LONGWAVE RADIATION
 
-# 3.1.1 SAVI Retrieval
+# 3.1.1 SAVI, LAI and Emissivity Retrieval
 
-# Set L value
-L = 0.5
+# Calculate SAVI, LAI and emissivity
+def savi_lai_emiss(image):
+
+    # Select required bands
+    # Remove lagoon pixels
+    red = image.select('SR_B4').clip(rect.difference(lagoon_geom))
+    nir = image.select('SR_B5').clip(rect.difference(lagoon_geom))
+
+    # Set the value for L
+    L = 0.5
+
+    # Calculate SAVI
+    savi = (nir.subtract(red).divide(nir.add(red).add(L)).multiply(1 + L)
+            .rename('savi'))
+
+    # Calculate LAI
+    raw_lai = savi.multiply(-1).add(0.69).divide(0.59).log().divide(-0.91)
+
+    # LAI <= 3 mask
+    lai_lte3 = raw_lai.lte(3)
+
+    # Apply mask to keep the pixels <= 3 and attribute 3 to masked pixels
+    # Due to unmask, null pixels from cloud mask and clip are also replaced
+    # Re-apply cloud mask and clip
+    lai = (raw_lai.updateMask(lai_lte3).unmask(3).rename('lai')
+           .updateMask(image.select('QA_PIXEL').bitwiseAnd(1<<6))
+           .clip(rect.difference(lagoon_geom)))
+
+    # Calculate emissivity
+    emiss_raw = lai.multiply(0.01).add(0.95)
+
+    # Attribute emissivity = 0.985 to water pixels (Tasumi, 2003)
+    emiss = emiss_raw.unmask(ee.Image(0.985).clip(lagoon_geom)).rename('emiss')
+
+    # Add bands to the image
+    return image.addBands(ee.Image([savi, lai, emiss]))
 
 
-
-
-
-
-
-
-
-
-
+# Map the function over the collection
+dataset8 = dataset7.map(savi_lai_emiss)
 
 
 # %% PLOT OF TEMPORAL AVAILABILITY

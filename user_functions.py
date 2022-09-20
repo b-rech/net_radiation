@@ -133,7 +133,7 @@ def cloud_mask(image):
     # Select cloud band
     # It is assigned 1 to the selected pixels and 0 to the others
     # Bit 6: 1 to clear sky and 0 to cloud or dilated cloud
-    clear = image.select('QA_PIXEL').bitwiseAnd(1<<6).neq(0)
+    clear = image.select('QA_PIXEL').bitwiseAnd(1<<6)
 
     return image.updateMask(clear)
 
@@ -320,26 +320,4 @@ def albedo(image):
     return image.addBands(albedo.rename('albedo'))
 
 
-# %% FUNCTION 12: SAVI AND LAI
-
-# Calculate Soil-Adjusted Vegetation Index
-def savi_lai(image):
-
-    # Select required bands
-    red = image.select('SR_B4')
-    nir = image.select('SR_B5')
-
-    # Set the value for L
-    L = 0.5
-
-    # Calculate SAVI
-    savi = nir.subtract(red).divide(nir.add(red).add(L)).multiply(1 + L)
-
-    # Calculate LAI
-    raw_lai = savi.multiply(-1).add(0.69).divide(0.59).log().divide(-0.91)
-
-    # LAI <= 3
-    lai_lte3 = lai.lte(3)
-
-    # Apply mask to keep the pixels <= 3 and attribute 3 to masked pixels
-    lai = raw_lai.updateMask(lai_lte3).unmask(3)
+# %% FUNCTION 12:
