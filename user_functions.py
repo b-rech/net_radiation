@@ -17,6 +17,7 @@ SCRIPT 1/3 - AUXILIAR FUNCTIONS
 import ee
 import pandas as pd
 import numpy as np
+import geemap
 
 # GEE initialization
 ee.Initialize()
@@ -320,4 +321,22 @@ def albedo(image):
     return image.addBands(albedo.rename('albedo'))
 
 
-# %% FUNCTION 12:
+# %% FUNCTION 12: UPWARD LONGWAVE RADIATION
+
+# Calculates the upward longwave radiation
+def up_long_rad(image):
+
+    # Select temperature band (scaled to K)
+    temp = image.select('ST_B10')
+
+    # Select emissivity band
+    emiss = image.select('emiss')
+
+    # Apply Stefan-Boltzmann equation
+    up_long_rad = temp.pow(4).multiply(emiss).multiply(5.67E-8)
+
+    # Add band to scene
+    return image.addBands(up_long_rad.rename('up_long_rad'))
+
+
+# %% FUNCTION 13:

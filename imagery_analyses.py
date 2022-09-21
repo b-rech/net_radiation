@@ -209,6 +209,7 @@ dataset6 = dataset5.map(theta_hor).map(theta_rel)
 # 2.2 DOWNWARD SHORTWAVE RADIATION
 
 
+
 # -----------------------------------------------------------------------------
 # 2.3 UPWARD SHORTWAVE RADIATION
 
@@ -218,9 +219,8 @@ dataset7 = dataset6.map(albedo)
 
 # %% PART 3: LONGWAVE RADIATION ###############################################
 
+# -----------------------------------------------------------------------------
 # 3.1 UPWARD LONGWAVE RADIATION
-
-# 3.1.1 SAVI, LAI and Emissivity Retrieval
 
 # Calculate SAVI, LAI and emissivity
 def savi_lai_emiss(image):
@@ -245,7 +245,7 @@ def savi_lai_emiss(image):
 
     # Apply mask to keep the pixels <= 3 and attribute 3 to masked pixels
     # Due to unmask, null pixels from cloud mask and clip are also replaced
-    # Re-apply cloud mask and clip
+    # Re-apply cloud mask and clip to remove lagoon area
     lai = (raw_lai.updateMask(lai_lte3).unmask(3).rename('lai')
            .updateMask(image.select('QA_PIXEL').bitwiseAnd(1<<6))
            .clip(rect.difference(lagoon_geom)))
@@ -257,12 +257,24 @@ def savi_lai_emiss(image):
     emiss = emiss_raw.unmask(ee.Image(0.985).clip(lagoon_geom)).rename('emiss')
 
     # Add bands to the image
-    return image.addBands(ee.Image([savi, lai, emiss]))
+    return image.addBands(ee.Image([savi, lai, raw_lai, emiss]))
 
 
 # Map the function over the collection
 dataset8 = dataset7.map(savi_lai_emiss)
 
+# Calculate Upward Longwave Radiation
+dataset9 = dataset8.map(up_long_rad)
+
+# Visualize mean values
+plot_map = geemap.Map()
+plot_map.addLayer((dataset9.select('up_long_rad')
+                   .map(lambda img : img.clip(basin_geom))).mean(),
+                  {'min':400, 'max':475,
+                      'palette':['#1a9641', '#a6d96a', '#ffffbf',
+                                 '#fdae61', '#d7191c']})
+plot_map.centerObject(rect, 12)
+plot_map.save('up_long_rad_mean.html')
 
 # %% PLOT OF TEMPORAL AVAILABILITY
 
