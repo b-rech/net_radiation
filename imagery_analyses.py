@@ -13,7 +13,8 @@ SCRIPT 2/3 - IMAGERY ANALYSES
 
 # %% 1 DATA PREPARATION #######################################################
 
-# This part of the code prepares the data to the sebsequent calculations.
+# This part of the code prepares the data to the subsequent calculations.
+
 
 # -----------------------------------------------------------------------------
 # 1.1 LIBRARIES AND SCRIPTS
@@ -33,6 +34,7 @@ from user_functions import *
 # GEE authentication and initialization
 #ee.Authenticate()
 ee.Initialize()
+
 
 # -----------------------------------------------------------------------------
 # 1.2 SHAPEFILE UPLOADING AND CONVERSION
@@ -55,6 +57,7 @@ lagoon_geom = ee.Geometry.Polygon(lagoon_coord)
 # Create rectangle for clipping images
 rect = ee.Geometry.Rectangle([-48.37428696492995, -27.68296346714984,
                             -48.56174151517356, -27.42983615496652])
+
 
 # -----------------------------------------------------------------------------
 # 1.3 SELECTION OF LANDSAT DATA
@@ -107,6 +110,7 @@ dataset1 = landsat8.map(get_cloud_percent)
 dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 0.10))
             .map(cloud_mask).sort('system:time_start'))
 
+
 # -----------------------------------------------------------------------------
 # 1.5 ELEVATION DATA
 
@@ -150,6 +154,7 @@ dataset3 = (dataset2
 # %% 2 SHORTWAVE RADIATION ####################################################
 
 # This part of the code provides the calculation of shortwave radiation.
+
 
 # -----------------------------------------------------------------------------
 # 2.1 RETRIEVAL OF ANGULAR PARAMETERS
@@ -216,8 +221,18 @@ dataset6 = dataset5.map(theta_hor).map(theta_rel)
 # Calculate albedo
 dataset7 = dataset6.map(albedo)
 
+# Visualize mean albedo
+albedo_map = geemap.Map()
+albedo_map.addLayer(dataset7.select('albedo').mean().clip(basin_geom),
+                  {'min':0, 'max':0.30,
+                      'palette':['#feebe2', '#fbb4b9', '#f768a1',
+                                 '#c51b8a', '#7a0177']})
+albedo_map.centerObject(rect, 12)
+albedo_map.save('albedo_map.html')
+
 
 # %% PART 3: LONGWAVE RADIATION ###############################################
+
 
 # -----------------------------------------------------------------------------
 # 3.1 UPWARD LONGWAVE RADIATION
@@ -225,10 +240,14 @@ dataset7 = dataset6.map(albedo)
 # Calculate SAVI, LAI and emissivity
 def savi_lai_emiss(image):
 
+    # Water mask (using NDWI to identify water surfaces)
+    water_mask = (dataset7.mean()
+                  .normalizedDifference(['SR_B3', 'SR_B5']).lt(0))
+
     # Select required bands
     # Remove lagoon pixels
-    red = image.select('SR_B4').clip(rect.difference(lagoon_geom))
-    nir = image.select('SR_B5').clip(rect.difference(lagoon_geom))
+    red = image.select('SR_B4').updateMask(water_mask)
+    nir = image.select('SR_B5').updateMask(water_mask)
 
     # Set the value for L
     L = 0.5
@@ -244,17 +263,18 @@ def savi_lai_emiss(image):
     lai_lte3 = raw_lai.lte(3)
 
     # Apply mask to keep the pixels <= 3 and attribute 3 to masked pixels
-    # Due to unmask, null pixels from cloud mask and clip are also replaced
-    # Re-apply cloud mask and clip to remove lagoon area
+    # Due to unmask, all masked pixels are also replaced
+    # Re-apply cloud and water mask
     lai = (raw_lai.updateMask(lai_lte3).unmask(3).rename('lai')
            .updateMask(image.select('QA_PIXEL').bitwiseAnd(1<<6))
-           .clip(rect.difference(lagoon_geom)))
+           .updateMask(water_mask))
 
     # Calculate emissivity
     emiss_raw = lai.multiply(0.01).add(0.95)
 
     # Attribute emissivity = 0.985 to water pixels (Tasumi, 2003)
-    emiss = emiss_raw.unmask(ee.Image(0.985).clip(lagoon_geom)).rename('emiss')
+    emiss = (emiss_raw.unmask(ee.Image(0.985).updateMask(water_mask.eq(0)))
+             .rename('emiss'))
 
     # Add bands to the image
     return image.addBands(ee.Image([savi, lai, raw_lai, emiss]))
@@ -266,15 +286,23 @@ dataset8 = dataset7.map(savi_lai_emiss)
 # Calculate Upward Longwave Radiation
 dataset9 = dataset8.map(up_long_rad)
 
-# Visualize mean values
-plot_map = geemap.Map()
-plot_map.addLayer((dataset9.select('up_long_rad')
-                   .map(lambda img : img.clip(basin_geom))).mean(),
-                  {'min':400, 'max':475,
+# Visualize mean emissivity
+emiss_map = geemap.Map()
+emiss_map.addLayer(dataset9.select('emiss').mean().clip(basin_geom),
+                  {'min':0.95, 'max':1,
                       'palette':['#1a9641', '#a6d96a', '#ffffbf',
                                  '#fdae61', '#d7191c']})
-plot_map.centerObject(rect, 12)
-plot_map.save('up_long_rad_mean.html')
+emiss_map.centerObject(rect, 12)
+emiss_map.save('emiss_map.html')
+
+# Visualize mean upward longwave radiation
+ulr_map = geemap.Map()
+ulr_map.addLayer(dataset9.select('up_long_rad').mean().clip(basin_geom),
+                  {'min':375, 'max':475,
+                      'palette':['#1a9641', '#a6d96a', '#ffffbf',
+                                 '#fdae61', '#d7191c']})
+ulr_map.centerObject(rect, 12)
+ulr_map.save('up_long_rad_map.html')
 
 # %% PLOT OF TEMPORAL AVAILABILITY
 
