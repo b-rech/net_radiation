@@ -37,7 +37,7 @@ ee.Initialize()
 
 
 # -----------------------------------------------------------------------------
-# 1.2 SHAPEFILE UPLOADING AND CONVERSION
+# 1.2 DATA UPLOADING AND CONVERSION
 
 # Upload contours of the basin and lagoon
 basin = gpd.read_file('vectors\\vector_layers.gpkg', layer='basin_area')
@@ -57,6 +57,28 @@ lagoon_geom = ee.Geometry.Polygon(lagoon_coord)
 # Create rectangle for clipping images
 rect = ee.Geometry.Rectangle([-48.37428696492995, -27.68296346714984,
                             -48.56174151517356, -27.42983615496652])
+
+# Upload meteorological data from weather station
+met_data = pd.read_csv('data_station_inmet.csv', sep=';', decimal=',',
+                       skiprows=10)
+
+# Select and rename attributes
+met_data = (met_data.iloc[:, [0, 1, 3, 7, 9, 18]]
+            .dropna().reset_index(drop=True))
+met_data.columns = ['date', 'hour', 'p_atm', 'rad', 'air_temp', 'rel_hum']
+
+# Convert data
+met_data['hour'] = met_data.loc[:, 'hour']/100
+met_data['rel_hum'] = met_data.loc[:, 'rel_hum']/100
+
+# Select dates between 11h and 15h only (L8 passes usually around 13h)
+met_data = met_data[[11 <= h <= 15 for h in met_data.hour]]
+
+# Atmospheric pressure from hPa to kPa
+met_data['p_atm'] = met_data.loc[:, 'p_atm']/10
+
+# Units: atmospheric pressure in kPa, global radiation in kJ/m²,
+# air temperature (dry-bulb) in °C.
 
 
 # -----------------------------------------------------------------------------
@@ -210,6 +232,43 @@ dataset5 = dataset4.map(hour_angle)
 dataset6 = dataset5.map(theta_hor).map(theta_rel)
 
 
+# -----------------------------------------------------------------------------
+# 2.2 ATMOSPHERIC TRANSMISSIVITY
+
+# Calculate vapor pressure from meteorological data (weather station)
+
+# Generate yyyy-mm-dd-Hhh IDs for information matching
+met_data['ids'] = met_data.date + '-H' + met_data.hour.astype(int).astype(str)
+
+# Retrieve saturation vapor pressure (kPa)
+met_data['sat_vp'] = (0.6112*np.exp(
+    17.62*met_data.air_temp/(243.12+met_data.air_temp)))
+
+# Retrieve actual vapor pressure (kPa)
+met_data['act_vp'] = (met_data.rel_hum*met_data.sat_vp*\
+                      (1.0016 + 3.15E-5*met_data.p_atm - 0.074/met_data.p_atm))
+
+# Create ee.Dictionary with date/hour ids and associated vapor pressure
+vp_values = ee.Dictionary.fromLists(keys=met_data.ids.values.tolist(),
+                                    values=met_data.act_vp.values.tolist())
+
+# Function to assign vapor pressure values to each image
+def vp_assign(image):
+
+    # Image's hour of acquisition
+    hour = (image.date().get('hour')
+            .add(image.date().get('minute').divide(60))
+            .round().format('%.0f'))
+
+    # ID in the format yyyy-mm-dd-Hhh
+    date_hour = ee.String(
+        image.get('DATE_ACQUIRED')).cat(ee.String('-H').cat(hour))
+
+    return image.set({'ACTUAL_VP':vp_values.get(date_hour)})
+
+
+# Map function over the collection
+dataset7 = dataset6.map(vp_assign)
 # -----------------------------------------------------------------------------
 # 2.2 DOWNWARD SHORTWAVE RADIATION
 
