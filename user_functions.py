@@ -218,18 +218,18 @@ def scale_L8(image):
 
 # %% FUNCTION 07: CREATE PIXEL LAT/LONG BANDS
 
-# Create bands with pixel coordinates
+# Create bands with pixel coordinates (convert to radians)
 def pixels_coords(image):
 
-    coords = image.pixelLonLat().rename(['long', 'lat'])
+    coords = image.pixelLonLat().multiply(np.pi/180).rename(['long', 'lat'])
 
     return image.addBands(coords)
 
 
-# %% FUNCTION 08: RETRIEVE SOLAR ZENITH ANGLE OVER A HORIZONTAL SURFACE
+# %% FUNCTION 08: RETRIEVE SOLAR ZENITH ANGLE COSINE OVER A HORIZONTAL SURFACE
 
-# Calculate theta_hor
-def theta_hor(image):
+# Calculate cos_theta_hor
+def cos_theta_hor(image):
 
     # Band with pixel latitudes
     lat = image.select('lat')
@@ -240,19 +240,19 @@ def theta_hor(image):
     # Hour angle
     hour_angle = image.getNumber('HOUR_ANGLE')
 
-    # Calculate theta
-    theta_hor = ((lat.sin().multiply(declination.sin()))
-                 .add(lat.cos()
+    # Calculate cosine of theta
+    cos_theta_hor = (lat.sin().multiply(declination.sin())
+                     .add(lat.cos()
                      .multiply(declination.cos())
                      .multiply(hour_angle.cos())))
 
-    return image.addBands(theta_hor.rename('theta_hor'))
+    return image.addBands(cos_theta_hor.rename('cos_theta_hor'))
 
 
-# %% FUNCTION 09: RETRIEVE SOLAR INCIDENCE ANGLE
+# %% FUNCTION 09: RETRIEVE SOLAR INCIDENCE ANGLE COSINE
 
 # Calculate theta_rel
-def theta_rel(image):
+def cos_theta_rel(image):
 
     # Band with pixel latitudes
     lat = image.select('lat')
@@ -269,8 +269,8 @@ def theta_rel(image):
     # Aspect band
     aspect = image.select('aspect')
 
-    # Calculate theta_rel
-    theta_rel = ((lat.sin().multiply(slope.cos()).multiply(declination.sin()))
+    # Calculate cos_theta_rel
+    cos_theta_rel = ((lat.sin().multiply(slope.cos()).multiply(declination.sin()))
                  .subtract(lat.cos().multiply(slope.sin())
                             .multiply(aspect.cos()).multiply(declination.sin()))
                  .add(lat.cos().multiply(slope.cos()).multiply(hour_angle.cos())
@@ -280,7 +280,7 @@ def theta_rel(image):
                  .add(aspect.sin().multiply(slope.sin())
                       .multiply(hour_angle.sin()).multiply(declination.cos())))
 
-    return image.addBands(theta_rel.rename('theta_rel'))
+    return image.addBands(cos_theta_rel.rename('cos_theta_rel'))
 
 
 # %% FUNCTION 10: RETRIEVE ATMOSPHERIC PRESSURE
@@ -339,4 +339,54 @@ def up_long_rad(image):
     return image.addBands(up_long_rad.rename('up_long_rad'))
 
 
-# %% FUNCTION 13:
+# %% FUNCTION 14: PRECIPITABLE WATER
+
+# Function to calculate precipitable water
+def prec_water(image):
+
+    # Retrieve saturation vapor pressure and relative humidity
+    sat_vp = image.get('SAT_VP')
+    rel_hum = image.get('REL_HUM')
+
+    # Retrieve atmospheric pressure
+    p = image.select('p_atm')
+
+    # Calculate actual vapor pressure
+    act_vp = (p.multiply(3.15E-5)
+              .add(p.pow(-1).multiply(-0.074))
+              .add(1.0016)
+              .multiply(sat_vp).multiply(rel_hum))
+
+    # Calculate precipitable water
+    prec_w = act_vp.multiply(p).multiply(0.14).add(2.1)
+
+    # Add band 'prec_water' to the image
+    return image.addBands(prec_w.rename('prec_water'))
+
+
+# %% FUNCTION 14: ATMOSPHERIC TRANSMISSIVITY
+
+# Calculates atmospheric transmissivity
+def atm_trans(image):
+
+    # Retrieve required parameters:
+
+    # Atmospheric pressure
+    p = image.select('p_atm')
+
+    # Precipitable water
+    w = image.select('prec_water')
+
+    # Cosine of solar zenith angle over a horizontal surface
+    c_theta_hor = image.select('cos_theta_hor')
+
+    # Turbidity coefficient assumed to be 1
+    kt = 1
+
+    # Retrieve atmospheric transmissivity
+    atm_trans = ((p.multiply(-0.00146).divide(c_theta_hor.multiply(kt))
+                  .add(w.divide(c_theta_hor).pow(0.4).multiply(-0.075))).exp()
+                 .multiply(0.627)).add(0.35)
+
+    # Add calculated band to image
+    return image.addBands(atm_trans.rename('atm_trans'))

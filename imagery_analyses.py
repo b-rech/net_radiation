@@ -13,8 +13,7 @@ SCRIPT 2/3 - IMAGERY ANALYSES
 
 # %% 1 DATA PREPARATION #######################################################
 
-# This part of the code prepares the data to the subsequent calculations.
-
+# This part of the code prepares the data for the subsequent calculations.
 
 # -----------------------------------------------------------------------------
 # 1.1 LIBRARIES AND SCRIPTS
@@ -35,9 +34,8 @@ from user_functions import *
 #ee.Authenticate()
 ee.Initialize()
 
-
 # -----------------------------------------------------------------------------
-# 1.2 DATA UPLOADING AND CONVERSION
+# 1.2 VECTOR LAYERS UPLOAD
 
 # Upload contours of the basin and lagoon
 basin = gpd.read_file('vectors\\vector_layers.gpkg', layer='basin_area')
@@ -57,6 +55,9 @@ lagoon_geom = ee.Geometry.Polygon(lagoon_coord)
 # Create rectangle for clipping images
 rect = ee.Geometry.Rectangle([-48.37428696492995, -27.68296346714984,
                             -48.56174151517356, -27.42983615496652])
+
+# -----------------------------------------------------------------------------
+# 1.3 METEOROLOGICAL DATA UPLOAD
 
 # Upload meteorological data from weather station
 met_data = pd.read_csv('data_station_inmet.csv', sep=';', decimal=',',
@@ -80,9 +81,8 @@ met_data['p_atm'] = met_data.loc[:, 'p_atm']/10
 # Units: atmospheric pressure in kPa, global radiation in kJ/m²,
 # air temperature (dry-bulb) in °C.
 
-
 # -----------------------------------------------------------------------------
-# 1.3 SELECTION OF LANDSAT DATA
+# 1.4 SELECTION OF LANDSAT DATA
 
 # Filter Landsat 8 imagery:
     # by bounds;
@@ -96,15 +96,15 @@ landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
             .filter(ee.Filter.eq('IMAGE_QUALITY_TIRS', 9))
             .map(to_31982))
 
-
 # -----------------------------------------------------------------------------
-# 1.4 CLOUD COVER ASSESSMENT
+# 1.5 CLOUD COVER ASSESSMENT
+
 
 # Function retrieve cloud cover over the area of interest
 def get_cloud_percent(image):
 
     """
-    This function calculates the cloud cover percentage within the geometry and
+    This function calculates the cloud cover proportion within the geometry and
     adds it to the metadata as a new attribute called CLOUDINESS.
     """
 
@@ -128,13 +128,12 @@ def get_cloud_percent(image):
 # Map function over the collection
 dataset1 = landsat8.map(get_cloud_percent)
 
-# Filter images (cloudiness limit of 10%) and apply cloud mask
-dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 0.10))
+# Filter images (cloudiness limit of 5%) and apply cloud mask
+dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 0.05))
             .map(cloud_mask).sort('system:time_start'))
 
-
 # -----------------------------------------------------------------------------
-# 1.5 ELEVATION DATA
+# 1.6 ELEVATION DATA
 
 # Digital elevation model from NASADEM
 dem = ee.Image("NASA/NASADEM_HGT/001")
@@ -148,9 +147,9 @@ dem = dem.addBands(ee.Terrain.slope(dem).multiply(np.pi/180))
 # Convert to radians
 dem = dem.addBands(ee.Terrain.aspect(dem).subtract(180).multiply(np.pi/180))
 
-
 # -----------------------------------------------------------------------------
-# 1.6 FINAL SCENE ADJUSTMENTS
+# 1.7 FINAL SCENE ADJUSTMENTS
+
 
 # Function to clip the scenes to the created rectangle
 def clip_rect(image):
@@ -172,11 +171,9 @@ dataset3 = (dataset2
             .map(clip_rect)         # Clip to the rectangle
             .map(to_31982))         # Reproject to SIRGAS 2000 UTM zone 22S
 
-
 # %% 2 SHORTWAVE RADIATION ####################################################
 
 # This part of the code provides the calculation of shortwave radiation.
-
 
 # -----------------------------------------------------------------------------
 # 2.1 RETRIEVAL OF ANGULAR PARAMETERS
@@ -188,7 +185,7 @@ dataset4 = dataset3.map(declination)
 basin_long = basin_geom.centroid().coordinates().getNumber(0).abs()
 
 
-# Function to calculate hour angle (constant over each scene)
+# Function to calculate hour angle (assumed constant over each scene)
 def hour_angle(image):
 
     """
@@ -227,15 +224,17 @@ def hour_angle(image):
 # Map function over collection
 dataset5 = dataset4.map(hour_angle)
 
-# Calculate solar zenith over a horizontal surface (theta_hor) and solar
-# incidence angle (theta_rel)
-dataset6 = dataset5.map(theta_hor).map(theta_rel)
-
+# Calculate solar zenith over a horizontal surface (cos_theta_hor) and solar
+# incidence angle (cos_theta_rel) cosines
+dataset6 = dataset5.map(cos_theta_hor).map(cos_theta_rel)
 
 # -----------------------------------------------------------------------------
 # 2.2 ATMOSPHERIC TRANSMISSIVITY
 
-# Calculate vapor pressure from meteorological data (weather station)
+# Calculate atmospheric pressure from elevation
+dataset7 = dataset6.map(atm_pressure)
+
+# Calculate vapor pressure from meteorological data (weather station):
 
 # Generate yyyy-mm-dd-Hhh IDs for information matching
 met_data['ids'] = met_data.date + '-H' + met_data.hour.astype(int).astype(str)
@@ -244,16 +243,18 @@ met_data['ids'] = met_data.date + '-H' + met_data.hour.astype(int).astype(str)
 met_data['sat_vp'] = (0.6112*np.exp(
     17.62*met_data.air_temp/(243.12+met_data.air_temp)))
 
-# Retrieve actual vapor pressure (kPa)
-met_data['act_vp'] = (met_data.rel_hum*met_data.sat_vp*\
-                      (1.0016 + 3.15E-5*met_data.p_atm - 0.074/met_data.p_atm))
-
 # Create ee.Dictionary with date/hour ids and associated vapor pressure
 vp_values = ee.Dictionary.fromLists(keys=met_data.ids.values.tolist(),
-                                    values=met_data.act_vp.values.tolist())
+                                    values=met_data.sat_vp.values.tolist())
 
-# Function to assign vapor pressure values to each image
-def vp_assign(image):
+# Create ee.Dictionary with date/hour ids and associated relative humidity
+hum_values = ee.Dictionary.fromLists(keys=met_data.ids.values.tolist(),
+                                    values=met_data.rel_hum.values.tolist())
+
+
+# Function to assign saturation vapor pressure and relative humidity
+# values to each image
+def vp_hum(image):
 
     # Image's hour of acquisition
     hour = (image.date().get('hour')
@@ -264,11 +265,13 @@ def vp_assign(image):
     date_hour = ee.String(
         image.get('DATE_ACQUIRED')).cat(ee.String('-H').cat(hour))
 
-    return image.set({'ACTUAL_VP':vp_values.get(date_hour)})
+    return image.set({'SAT_VP':vp_values.get(date_hour),
+                      'REL_HUM':hum_values.get(date_hour)})
 
 
-# Map function over the collection
-dataset7 = dataset6.map(vp_assign)
+# Map functions over the collection
+dataset8 = dataset7.map(vp_hum).map(prec_water).map(atm_trans)
+
 # -----------------------------------------------------------------------------
 # 2.2 DOWNWARD SHORTWAVE RADIATION
 
