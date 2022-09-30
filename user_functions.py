@@ -345,8 +345,8 @@ def up_long_rad(image):
 def prec_water(image):
 
     # Retrieve saturation vapor pressure and relative humidity
-    sat_vp = image.get('SAT_VP')
-    rel_hum = image.get('REL_HUM')
+    sat_vp = image.getNumber('SAT_VP')
+    rel_hum = image.getNumber('REL_HUM')
 
     # Retrieve atmospheric pressure
     p = image.select('p_atm')
@@ -390,3 +390,51 @@ def atm_trans(image):
 
     # Add calculated band to image
     return image.addBands(atm_trans.rename('atm_trans'))
+
+
+# %% FUNCTION 15: DOWNWARD SHORTWAVE RADIATION
+
+# Calculates downward shortwave radiation
+def dw_sw_rad(image):
+
+    # Solar constant
+    G = 1367 # W/m²
+
+    # Cosine of solar incidence angle
+    c_theta_rel = image.select('cos_theta_rel')
+
+    # Atmospheric transmissivity
+    trans = image.select('atm_trans')
+
+    # Earth-Sun distance
+    d = image.getNumber('EARTH_SUN_DISTANCE')
+
+    # Calculate incident radiation
+    dw_sw_rad = c_theta_rel.multiply(trans).multiply(G).divide(d.pow(2))
+
+    return image.addBands(dw_sw_rad.rename('dw_sw_rad'))
+
+
+# %% FUNCTION 16: UPWARD SHORTWAVE RADIATION
+
+# Calculates upward shortwave radiation
+def up_sw_rad(image):
+
+    up_sw_rad = image.select('dw_sw_rad').multiply(image.select('albedo'))
+
+    return image.addBands(up_sw_rad.rename('up_sw_rad'))
+
+
+# %% FUNCTION 17: NET SHORTWAVE RADIATION
+
+# Calculates shortwave radiation budget
+def net_sw_rad(image):
+
+    # Upward and downward fluxes
+    up = image.select('up_sw_rad')
+    down = image.select('dw_sw_rad')
+
+    # Net shortwave radiation
+    budget = down.subtract(up)
+
+    return image.addBands(budget.rename('net_sw_rad'))

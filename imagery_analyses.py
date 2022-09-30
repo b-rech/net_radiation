@@ -100,7 +100,7 @@ landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
 # 1.5 CLOUD COVER ASSESSMENT
 
 
-# Function retrieve cloud cover over the area of interest
+# Function to retrieve cloud cover over the area of interest
 def get_cloud_percent(image):
 
     """
@@ -181,7 +181,7 @@ dataset3 = (dataset2
 # Calculate declination, B, E and day of year
 dataset4 = dataset3.map(declination)
 
-# Get centroid longitude for the area of interest (basin)
+# Get centroid longitude (degrees) for the area of interest (basin)
 basin_long = basin_geom.centroid().coordinates().getNumber(0).abs()
 
 
@@ -200,7 +200,7 @@ def hour_angle(image):
 
     # Local time zone standard meridian (degrees)
     # UTC -3, 15 degrees each hour
-    meridian = ee.Number(15*3)
+    meridian = ee.Number(3*15)
 
     # Calculate solar time (seconds)
     solar_time = local_time.add(
@@ -275,26 +275,38 @@ dataset8 = dataset7.map(vp_hum).map(prec_water).map(atm_trans)
 # -----------------------------------------------------------------------------
 # 2.2 DOWNWARD SHORTWAVE RADIATION
 
-
+dataset9 = dataset8.map(dw_sw_rad)
 
 # -----------------------------------------------------------------------------
 # 2.3 UPWARD SHORTWAVE RADIATION
 
 # Calculate albedo
-dataset7 = dataset6.map(albedo)
+dataset10 = dataset9.map(albedo)
 
-# Visualize mean albedo
-albedo_map = geemap.Map()
-albedo_map.addLayer(dataset7.select('albedo').mean().clip(basin_geom),
-                  {'min':0, 'max':0.30,
-                      'palette':['#feebe2', '#fbb4b9', '#f768a1',
-                                 '#c51b8a', '#7a0177']})
-albedo_map.centerObject(rect, 12)
-albedo_map.save('albedo_map.html')
+# Retrieve upward shortwave radiation
+dataset11 = dataset10.map(up_sw_rad)
 
+# -----------------------------------------------------------------------------
+# 2.4 SHORTWAVE RADIATION BUDGET
+
+# Calculate shortwave radiation budget
+dataset12 = dataset11.map(net_sw_rad)
+
+# Visualization
+mean_sw_rad = dataset12.select('net_sw_rad').mean().clip(basin_geom)
+
+info = dataset7.getInfo()['features']
+
+vis_params = {'min':0, 'max':1000,
+              'palette':['#3288bd', '#99d594', '#e6f598',
+                         '#fee08b', '#fc8d59', '#d53e4f']}
+
+mean_sw_rad_map = geemap.Map()
+mean_sw_rad_map.addLayer(mean_sw_rad, vis_params)
+mean_sw_rad_map.centerObject(mean_sw_rad, 12)
+mean_sw_rad_map.save('mean_sw_rad_map.html')
 
 # %% PART 3: LONGWAVE RADIATION ###############################################
-
 
 # -----------------------------------------------------------------------------
 # 3.1 UPWARD LONGWAVE RADIATION
@@ -401,21 +413,7 @@ ax[9].set(xticklabels=range(1, 13), xlabel='Mês')
 
 # %% IMAGES VISUALIZATION
 
-image = ee.Image(dataset7.toList(10).get(1))
-
-theta_band = dataset6.first().select('theta_rel')
-
-qa_pixel = (image.select('QA_PIXEL'))
-
-clouds = qa_pixel.bitwiseAnd(1<<6).eq(0)
-clouds = clouds.updateMask(clouds)
-
 mapa = geemap.Map()
-mapa.addLayer(image.select('elevation'), {'min':0, 'max':500})
-mapa.addLayer(image.select('albedo'), {'min':0, 'max':1})
-mapa.addLayer(image, {'bands':['SR_B4', 'SR_B3', 'SR_B2'],'min':0, 'max':0.15})
-mapa.addLayer(theta_band, {'min':-np.pi/2, 'max':np.pi/2})
-mapa.addLayer(clouds, {'palette':'red'})
-mapa.centerObject(basin_geom, 10)
-mapa.addLayer(rect)
-mapa.save('img2.html')
+mapa.addLayer(prec_w)
+mapa.centerObject(prec_w, 12)
+mapa.save('teste.html')
