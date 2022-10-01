@@ -88,13 +88,11 @@ met_data['p_atm'] = met_data.loc[:, 'p_atm']/10
     # by bounds;
     # by processing level (L2SP = both optical and thermal bands);
     # by sensors quality (0=worst, 9=best);
-# Reproject to SIRGAS 2000 UTM zone 22S
 landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
             .filterBounds(basin_geom)
             .filter(ee.Filter.contains('.geo', basin_geom))
             .filter(ee.Filter.eq('IMAGE_QUALITY_OLI', 9))
-            .filter(ee.Filter.eq('IMAGE_QUALITY_TIRS', 9))
-            .map(to_31982))
+            .filter(ee.Filter.eq('IMAGE_QUALITY_TIRS', 9)))
 
 # -----------------------------------------------------------------------------
 # 1.5 CLOUD COVER ASSESSMENT
@@ -128,7 +126,8 @@ def get_cloud_percent(image):
 # Map function over the collection
 dataset1 = landsat8.map(get_cloud_percent)
 
-# Filter images (cloudiness limit of 5%) and apply cloud mask
+# Filter images (cloudiness limit of 5%)
+# and apply cloud mask (from user_functions)
 dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 0.05))
             .map(cloud_mask).sort('system:time_start'))
 
@@ -150,26 +149,19 @@ dem = dem.addBands(ee.Terrain.aspect(dem).subtract(180).multiply(np.pi/180))
 # -----------------------------------------------------------------------------
 # 1.7 FINAL SCENE ADJUSTMENTS
 
-
-# Function to clip the scenes to the created rectangle
-def clip_rect(image):
-
-    return image.clip(rect)
-
-
-# Function to add dem as a band to each image
-def dem_bands(image):
-
-    return image.addBands(dem, names=['elevation', 'slope', 'aspect'])
-
-
-# Map functions
+# Map functions:
+# Scale the bands (from user_functions)
+# Add DEM, slope and aspect
+# Add bands of lat and long coords (from user_functions)
+# Clip to the rectangle
+# Reproject to SIRGAS 2000 UTM zone 22S
 dataset3 = (dataset2
-            .map(scale_L8)          # Scale the bands
-            .map(dem_bands)         # Add DEM, slope and aspect
-            .map(pixels_coords)     # Add bands of lat and long coords
-            .map(clip_rect)         # Clip to the rectangle
-            .map(to_31982))         # Reproject to SIRGAS 2000 UTM zone 22S
+            .map(scale_L8)
+            .map(lambda img : img.addBands(
+                dem, names=['elevation', 'slope', 'aspect']))
+            .map(pixels_coords)
+            .map(lambda img : img.clip(rect))
+            .map(lambda img : img.reproject(crs='EPSG:31982', scale=30)))
 
 # %% 2 SHORTWAVE RADIATION ####################################################
 
@@ -178,10 +170,10 @@ dataset3 = (dataset2
 # -----------------------------------------------------------------------------
 # 2.1 RETRIEVAL OF ANGULAR PARAMETERS
 
-# Calculate declination, B, E and day of year
+# Calculate declination, B, E and day of year (from user_functions)
 dataset4 = dataset3.map(declination)
 
-# Get centroid longitude (degrees) for the area of interest (basin)
+# Get centroid longitude (degrees absolute) for the area of interest (basin)
 basin_long = basin_geom.centroid().coordinates().getNumber(0).abs()
 
 
@@ -225,13 +217,13 @@ def hour_angle(image):
 dataset5 = dataset4.map(hour_angle)
 
 # Calculate solar zenith over a horizontal surface (cos_theta_hor) and solar
-# incidence angle (cos_theta_rel) cosines
+# incidence angle (cos_theta_rel) cosines (from user_functions)
 dataset6 = dataset5.map(cos_theta_hor).map(cos_theta_rel)
 
 # -----------------------------------------------------------------------------
 # 2.2 ATMOSPHERIC TRANSMISSIVITY
 
-# Calculate atmospheric pressure from elevation
+# Calculate atmospheric pressure from elevation (from user_functions)
 dataset7 = dataset6.map(atm_pressure)
 
 # Calculate vapor pressure from meteorological data (weather station):
@@ -265,25 +257,29 @@ def vp_hum(image):
     date_hour = ee.String(
         image.get('DATE_ACQUIRED')).cat(ee.String('-H').cat(hour))
 
-    return image.set({'SAT_VP':vp_values.get(date_hour),
-                      'REL_HUM':hum_values.get(date_hour)})
+    return image.set({'SAT_VP':vp_values.getNumber(date_hour),
+                      'REL_HUM':hum_values.getNumber(date_hour)})
 
 
-# Map functions over the collection
+# Map functions over the collection to retrieve:
+# Saturation vapor pressure and relative humidity
+# Precipitable water (from user_functions)
+# Atmospheric transmissivity (from user_functions)
 dataset8 = dataset7.map(vp_hum).map(prec_water).map(atm_trans)
 
 # -----------------------------------------------------------------------------
 # 2.2 DOWNWARD SHORTWAVE RADIATION
 
+# Retrieve downward shortwave fluxes (from user_functions)
 dataset9 = dataset8.map(dw_sw_rad)
 
 # -----------------------------------------------------------------------------
 # 2.3 UPWARD SHORTWAVE RADIATION
 
-# Calculate albedo
-dataset10 = dataset9.map(albedo)
+# Calculate albedo (from user_functions)
+dataset10 = dataset9.map(get_albedo)
 
-# Retrieve upward shortwave radiation
+# Retrieve upward shortwave radiation (from user_functions)
 dataset11 = dataset10.map(up_sw_rad)
 
 # -----------------------------------------------------------------------------
@@ -293,29 +289,36 @@ dataset11 = dataset10.map(up_sw_rad)
 dataset12 = dataset11.map(net_sw_rad)
 
 # Visualization
-mean_sw_rad = dataset12.select('net_sw_rad').mean().clip(basin_geom)
+mean_sw_rn = dataset12.select('net_sw_rad').mean().clip(basin_geom)
 
-info = dataset7.getInfo()['features']
+vis_params = {'min':350, 'max':900,
+              'palette':['#1a9850', '#91cf60', '#d9ef8b',
+                         '#fee08b', '#fc8d59', '#d73027']}
 
-vis_params = {'min':0, 'max':1000,
-              'palette':['#3288bd', '#99d594', '#e6f598',
-                         '#fee08b', '#fc8d59', '#d53e4f']}
-
-mean_sw_rad_map = geemap.Map()
-mean_sw_rad_map.addLayer(mean_sw_rad, vis_params)
-mean_sw_rad_map.centerObject(mean_sw_rad, 12)
-mean_sw_rad_map.save('mean_sw_rad_map.html')
+mean_sw_rn_map = geemap.Map()
+mean_sw_rn_map.addLayer(mean_sw_rn, vis_params)
+mean_sw_rn_map.centerObject(mean_sw_rn, 12)
+mean_sw_rn_map.save('mean_sw_rn_map.html')
 
 # %% PART 3: LONGWAVE RADIATION ###############################################
 
 # -----------------------------------------------------------------------------
-# 3.1 UPWARD LONGWAVE RADIATION
+# 3.1 DOWNWARD LONGWAVE RADIATION
+
+# Calculate atmospheric emissivity (from user_functions)
+dataset13 = dataset12.map(atm_emiss)
+
+# Retrieve downward longwave radiation (from user_functions)
+dataset14 = dataset13.map(dw_lw_rad)
+
+# -----------------------------------------------------------------------------
+# 3.2 UPWARD LONGWAVE RADIATION
 
 # Calculate SAVI, LAI and emissivity
 def savi_lai_emiss(image):
 
     # Water mask (using NDWI to identify water surfaces)
-    water_mask = (dataset7.mean()
+    water_mask = (dataset14.mean()
                   .normalizedDifference(['SR_B3', 'SR_B5']).lt(0))
 
     # Select required bands
@@ -351,32 +354,48 @@ def savi_lai_emiss(image):
              .rename('emiss'))
 
     # Add bands to the image
-    return image.addBands(ee.Image([savi, lai, raw_lai, emiss]))
+    return image.addBands(ee.Image([savi, lai, emiss]))
 
 
 # Map the function over the collection
-dataset8 = dataset7.map(savi_lai_emiss)
+dataset15 = dataset14.map(savi_lai_emiss)
 
-# Calculate Upward Longwave Radiation
-dataset9 = dataset8.map(up_long_rad)
+# Calculate Upward Longwave Radiation (from user_functions)
+dataset16 = dataset15.map(up_lw_rad)
 
-# Visualize mean emissivity
-emiss_map = geemap.Map()
-emiss_map.addLayer(dataset9.select('emiss').mean().clip(basin_geom),
-                  {'min':0.95, 'max':1,
-                      'palette':['#1a9641', '#a6d96a', '#ffffbf',
-                                 '#fdae61', '#d7191c']})
-emiss_map.centerObject(rect, 12)
-emiss_map.save('emiss_map.html')
+# -----------------------------------------------------------------------------
+# 3.3 LONGWAVE RADIATION BUDGET
 
-# Visualize mean upward longwave radiation
-ulr_map = geemap.Map()
-ulr_map.addLayer(dataset9.select('up_long_rad').mean().clip(basin_geom),
-                  {'min':375, 'max':475,
-                      'palette':['#1a9641', '#a6d96a', '#ffffbf',
-                                 '#fdae61', '#d7191c']})
-ulr_map.centerObject(rect, 12)
-ulr_map.save('up_long_rad_map.html')
+# Calculate longwave radiation budget (from user_functions)
+dataset17 = dataset16.map(net_lw_rad)
+
+# Visualization
+mean_lw_rn = dataset17.select('net_lw_rad').mean().clip(basin_geom)
+
+vis_params = {'min':-100, 'max':-78,
+              'palette':['#1a9850', '#91cf60', '#d9ef8b',
+                         '#fee08b', '#fc8d59', '#d73027']}
+
+mean_lw_rn_map = geemap.Map()
+mean_lw_rn_map.addLayer(mean_lw_rn, vis_params)
+mean_lw_rn_map.centerObject(mean_lw_rn, 12)
+mean_lw_rn_map.save('mean_lw_rn_map.html')
+
+# %% PART 4: ALL-WAVE NET RADIATION ###########################################
+
+dataset18 = dataset17.map(all_wave_rn)
+
+# Visualization
+mean_rn = dataset18.select('Rn').mean().clip(basin_geom)
+
+vis_params = {'min':300, 'max':700,
+              'palette':['#1a9850', '#91cf60', '#d9ef8b',
+                         '#fee08b', '#fc8d59', '#d73027']}
+
+mean_rn_map = geemap.Map()
+mean_rn_map.addLayer(mean_rn, vis_params)
+mean_rn_map.centerObject(mean_rn, 12)
+mean_rn_map.save('mean_rn_map.html')
 
 # %% PLOT OF TEMPORAL AVAILABILITY
 
@@ -413,7 +432,13 @@ ax[9].set(xticklabels=range(1, 13), xlabel='Mês')
 
 # %% IMAGES VISUALIZATION
 
+mean_rn = dataset16.select('ST_B10').mean().clip(basin_geom)
+
+vis_params = {'min':283, 'max':303,
+              'palette':['#3288bd', '#99d594', '#e6f598',
+                         '#fee08b', '#fc8d59', '#d53e4f']}
+
 mapa = geemap.Map()
-mapa.addLayer(prec_w)
-mapa.centerObject(prec_w, 12)
-mapa.save('teste.html')
+mapa.addLayer(mean_rn, vis_params)
+mapa.centerObject(basin_geom, 12)
+mapa.save('Rn.html')
