@@ -397,10 +397,13 @@ mean_rn_map.addLayer(mean_rn, vis_params)
 mean_rn_map.centerObject(mean_rn, 12)
 mean_rn_map.save('mean_rn_map.html')
 
-# %% PLOT OF TEMPORAL AVAILABILITY
+# %% TEMPORAL AVAILABILITY AND SEASONS
+
+# Set season (from user_functions)
+dataset19 = dataset18.map(set_season)
 
 # Retrieve collection metadata
-info_list = dataset7.getInfo()['features']
+info_list = dataset19.getInfo()['features']
 info_df = list_info_df(info_list)
 
 # Extraction of years
@@ -415,10 +418,6 @@ for year, axis in zip(
         range(info_df.year.min(), info_df.year.max() + 1),
         range(0, 10)):
 
-    # Total available images (with good cloud cover)
-    sns.scatterplot(x='date', y=0, data=info_df[info_df.year == year],
-                    color='green', ax=ax[axis])
-
     # Styling
     ax[axis].set(xlim=(np.datetime64(f'{year}-01-01'),
                        np.datetime64(f'{year}-12-31')),
@@ -427,18 +426,13 @@ for year, axis in zip(
                  ylabel = year)
     ax[axis].grid(visible=True, which='major', axis='both')
 
+    # Total available images (with good cloud cover)
+    sns.scatterplot(x='date', y=0, data=info_df[info_df.year == year],
+                    hue='season',
+                    hue_order = ['Spring', 'Summer', 'Fall', 'Winter'],
+                    ax=ax[axis], legend=False)
+
+handles, labels = ax[9].get_legend_handles_labels()
+plot.legend(handles, labels, loc='upper center')
+
 ax[9].set(xticklabels=range(1, 13), xlabel='Mês')
-
-
-# %% IMAGES VISUALIZATION
-
-mean_rn = dataset16.select('ST_B10').mean().clip(basin_geom)
-
-vis_params = {'min':283, 'max':303,
-              'palette':['#3288bd', '#99d594', '#e6f598',
-                         '#fee08b', '#fc8d59', '#d53e4f']}
-
-mapa = geemap.Map()
-mapa.addLayer(mean_rn, vis_params)
-mapa.centerObject(basin_geom, 12)
-mapa.save('Rn.html')

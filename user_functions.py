@@ -405,7 +405,38 @@ def all_wave_rn(image):
     return image.addBands(Rn.rename('Rn'))
 
 
-# %% FUNCTION 01: GENERATE METADATA DATAFRAME
+# %% SET SEASON
+
+# Includes season in image metadata
+def set_season(image):
+
+    # Select month
+    month = image.date().get('month')
+
+    # Select day
+    day = image.date().get('day')
+
+    # Retrieve the season
+    season = ee.List(
+        [ee.Algorithms.If(month.eq(1), 'Summer'),
+         ee.Algorithms.If(month.eq(2), 'Summer'),
+         ee.Algorithms.If(month.eq(3).And(day.lt(21)), 'Summer', 'Fall'),
+         ee.Algorithms.If(month.eq(4), 'Fall'),
+         ee.Algorithms.If(month.eq(5), 'Fall'),
+         ee.Algorithms.If(month.eq(6).And(day.lt(21)), 'Fall', 'Winter'),
+         ee.Algorithms.If(month.eq(7), 'Winter'),
+         ee.Algorithms.If(month.eq(8), 'Winter'),
+         ee.Algorithms.If(month.eq(9).And(day.lt(23)), 'Winter', 'Spring'),
+         ee.Algorithms.If(month.eq(10), 'Spring'),
+         ee.Algorithms.If(month.eq(11), 'Spring'),
+         ee.Algorithms.If(month.eq(12).And(day.lt(21)), 'Spring', 'Summer')]
+        ).get(month.subtract(1))
+
+    # Set to metadata
+    return image.set({'SEASON':season})
+
+
+# %% GENERATE METADATA DATAFRAME
 
 # Function to generate a metadata dataframe
 def list_info_df(properties_list):
@@ -417,11 +448,9 @@ def list_info_df(properties_list):
 
     # Variable initialization
     ids = []
-    cloudiness = []
-    algorithm_sr = []
-    algorithm_st = []
     time = []
-    software_version = []
+    season = []
+    cloudiness = []
     path = []
     row = []
 
@@ -431,22 +460,14 @@ def list_info_df(properties_list):
         ids.append(
             properties_list[j]['properties']['system:index'])
 
-        cloudiness.append(
-            properties_list[j]['properties']['CLOUDINESS'])
-
-        algorithm_sr.append(
-            properties_list[j]['properties']
-            ['ALGORITHM_SOURCE_SURFACE_REFLECTANCE'])
-
-        algorithm_st.append(
-            properties_list[j]['properties']
-            ['ALGORITHM_SOURCE_SURFACE_TEMPERATURE'])
-
         time.append(
             properties_list[j]['properties']['system:time_start'])
 
-        software_version.append(
-            properties_list[j]['properties']['L1_PROCESSING_SOFTWARE_VERSION'])
+        season.append(
+            properties_list[j]['properties']['SEASON'])
+
+        cloudiness.append(
+            properties_list[j]['properties']['CLOUDINESS'])
 
         path.append(
             properties_list[j]['properties']['WRS_PATH'])
@@ -458,11 +479,9 @@ def list_info_df(properties_list):
     # Dataframe's generation
     infos = pd.DataFrame({
         'id':ids,
-        'cloudiness':cloudiness,
         'date':time,
-        'software_version':software_version,
-        'algorithm_sr':algorithm_sr,
-        'algorithm_st':algorithm_st,
+        'season':season,
+        'cloudiness':cloudiness,
         'path':path,
         'row':row})
 
