@@ -26,6 +26,7 @@ import geopandas as gpd
 import geemap
 from matplotlib import pyplot as plt
 import seaborn as sns
+plt.rcParams['figure.dpi'] = 300
 
 # Required scripts
 from user_functions import *
@@ -295,10 +296,10 @@ vis_params = {'min':350, 'max':900,
               'palette':['#1a9850', '#91cf60', '#d9ef8b',
                          '#fee08b', '#fc8d59', '#d73027']}
 
-mean_sw_rn_map = geemap.Map()
-mean_sw_rn_map.addLayer(mean_sw_rn, vis_params)
-mean_sw_rn_map.centerObject(mean_sw_rn, 12)
-mean_sw_rn_map.save('mean_sw_rn_map.html')
+# mean_sw_rn_map = geemap.Map()
+# mean_sw_rn_map.addLayer(mean_sw_rn, vis_params)
+# mean_sw_rn_map.centerObject(mean_sw_rn, 12)
+# mean_sw_rn_map.save('mean_sw_rn_map.html')
 
 # %% PART 3: LONGWAVE RADIATION ###############################################
 
@@ -376,10 +377,10 @@ vis_params = {'min':-100, 'max':-78,
               'palette':['#1a9850', '#91cf60', '#d9ef8b',
                          '#fee08b', '#fc8d59', '#d73027']}
 
-mean_lw_rn_map = geemap.Map()
-mean_lw_rn_map.addLayer(mean_lw_rn, vis_params)
-mean_lw_rn_map.centerObject(mean_lw_rn, 12)
-mean_lw_rn_map.save('mean_lw_rn_map.html')
+# mean_lw_rn_map = geemap.Map()
+# mean_lw_rn_map.addLayer(mean_lw_rn, vis_params)
+# mean_lw_rn_map.centerObject(mean_lw_rn, 12)
+# mean_lw_rn_map.save('mean_lw_rn_map.html')
 
 # %% PART 4: ALL-WAVE NET RADIATION ###########################################
 
@@ -392,12 +393,14 @@ vis_params = {'min':300, 'max':700,
               'palette':['#1a9850', '#91cf60', '#d9ef8b',
                          '#fee08b', '#fc8d59', '#d73027']}
 
-mean_rn_map = geemap.Map()
-mean_rn_map.addLayer(mean_rn, vis_params)
-mean_rn_map.centerObject(mean_rn, 12)
-mean_rn_map.save('mean_rn_map.html')
+# mean_rn_map = geemap.Map()
+# mean_rn_map.addLayer(mean_rn, vis_params)
+# mean_rn_map.centerObject(mean_rn, 12)
+# mean_rn_map.save('mean_rn_map.html')
 
 # %% TEMPORAL AVAILABILITY AND SEASONS
+
+sns.set_style('white')
 
 # Set season (from user_functions)
 dataset19 = dataset18.map(set_season)
@@ -410,8 +413,7 @@ info_df = list_info_df(info_list)
 info_df['year'] = pd.DatetimeIndex(info_df.date).year
 
 # Create figure
-plot, ax = plt.subplots(nrows=10, figsize=(10, 5), dpi=300)
-sns.set_style('white')
+plot, ax = plt.subplots(nrows=10, figsize=(12, 6), dpi=300)
 
 # Iterate on each axis (year)
 for year, axis in zip(
@@ -423,16 +425,78 @@ for year, axis in zip(
                        np.datetime64(f'{year}-12-31')),
                  ylim=(-0.1, 0.1),
                  xticklabels=[], yticklabels=[],
-                 ylabel = year)
+                 ylabel = year, xlabel=' ')
     ax[axis].grid(visible=True, which='major', axis='both')
 
     # Total available images (with good cloud cover)
     sns.scatterplot(x='date', y=0, data=info_df[info_df.year == year],
-                    hue='season',
-                    hue_order = ['Spring', 'Summer', 'Fall', 'Winter'],
                     ax=ax[axis], legend=False)
 
-handles, labels = ax[9].get_legend_handles_labels()
-plot.legend(handles, labels, loc='upper center')
+# handles, labels = ax[9].get_legend_handles_labels()
+# plot.legend(handles, labels, loc='upper center')
 
-ax[9].set(xticklabels=range(1, 13), xlabel='Mês')
+ax[9].set(xticklabels=['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago',
+                       'Set', 'Out', 'Nov', 'Dez'], label='Mês')
+
+
+# %% NET RADIATION SEASONAL MEANS
+
+# Basin limits without lagoon
+land_basin_geom = basin_geom.difference(lagoon_geom)
+
+# Seasons
+seasons = ['Spring', 'Summer', 'Fall', 'Winter']
+
+# Net shortwave radiation means
+land_nsr_means = []
+water_nsr_means = []
+
+# Net longwave radiation means
+land_nlr_means = []
+water_nlr_means = []
+
+# Net all-wave radiation means
+land_rn_means = []
+water_rn_means = []
+
+for season in seasons:
+
+    # Mean image of season
+    mean_image = (dataset19.select(['net_lw_rad', 'net_sw_rad', 'Rn'])
+                  .filter(ee.Filter.eq('SEASON', season)).mean())
+
+    # Mean of basin without lagoon
+    land_means = mean_image.reduceRegion(reducer=ee.Reducer.mean(),
+                                         geometry=land_basin_geom,
+                                         scale=30).getInfo()
+
+    # Mean over lagoon
+    water_means = mean_image.reduceRegion(reducer=ee.Reducer.mean(),
+                                         geometry=lagoon_geom,
+                                         scale=30).getInfo()
+
+    land_nsr_means.append(land_means['net_sw_rad'])
+    water_nsr_means.append(water_means['net_sw_rad'])
+
+    land_nlr_means.append(land_means['net_lw_rad'])
+    water_nlr_means.append(water_means['net_lw_rad'])
+
+    land_rn_means.append(land_means['Rn'])
+    water_rn_means.append(water_means['Rn'])
+
+
+season_means = pd.DataFrame({'Season':seasons,
+                             'Land_SW':land_nsr_means,
+                             'Land_LW':land_nlr_means,
+                             'Land_Rn':land_rn_means,
+                             'Water_SW':water_nsr_means,
+                             'Water_LW':water_nlr_means,
+                             'Water_Rn':water_rn_means})
+
+season_means.to_csv('season_means.csv', sep=';', decimal=',')
+
+
+plot_means = season_means.melt(id_vars='Season', var_name='type',
+                               value_name='net_rad')
+
+sns.catplot(x='Season', y='net_rad', data=plot_means, kind='bar', hue='type')
