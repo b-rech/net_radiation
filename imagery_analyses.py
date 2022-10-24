@@ -92,6 +92,7 @@ met_data['p_atm'] = met_data.loc[:, 'p_atm']/10
 landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
             .filterBounds(basin_geom)
             .filter(ee.Filter.contains('.geo', basin_geom))
+            .filter(ee.Filter.eq('PROCESSING_LEVEL', 'L2SP'))
             .filter(ee.Filter.eq('IMAGE_QUALITY_OLI', 9))
             .filter(ee.Filter.eq('IMAGE_QUALITY_TIRS', 9)))
 
