@@ -293,14 +293,6 @@ dataset12 = dataset11.map(net_sw_rad)
 # Visualization
 mean_sw_rn = dataset12.select('net_sw_rad').mean().clip(basin_geom)
 
-vis_params = {'min':350, 'max':900,
-              'palette':['#1a9850', '#91cf60', '#d9ef8b',
-                         '#fee08b', '#fc8d59', '#d73027']}
-
-# mean_sw_rn_map = geemap.Map()
-# mean_sw_rn_map.addLayer(mean_sw_rn, vis_params)
-# mean_sw_rn_map.centerObject(mean_sw_rn, 12)
-# mean_sw_rn_map.save('mean_sw_rn_map.html')
 
 # %% PART 3: LONGWAVE RADIATION ###############################################
 
@@ -371,33 +363,11 @@ dataset16 = dataset15.map(up_lw_rad)
 # Calculate longwave radiation budget (from user_functions)
 dataset17 = dataset16.map(net_lw_rad)
 
-# Visualization
-mean_lw_rn = dataset17.select('net_lw_rad').mean().clip(basin_geom)
-
-vis_params = {'min':-100, 'max':-78,
-              'palette':['#1a9850', '#91cf60', '#d9ef8b',
-                         '#fee08b', '#fc8d59', '#d73027']}
-
-# mean_lw_rn_map = geemap.Map()
-# mean_lw_rn_map.addLayer(mean_lw_rn, vis_params)
-# mean_lw_rn_map.centerObject(mean_lw_rn, 12)
-# mean_lw_rn_map.save('mean_lw_rn_map.html')
 
 # %% PART 4: ALL-WAVE NET RADIATION ###########################################
 
 dataset18 = dataset17.map(all_wave_rn)
 
-# Visualization
-mean_rn = dataset18.select('Rn').mean().clip(basin_geom)
-
-vis_params = {'min':300, 'max':700,
-              'palette':['#1a9850', '#91cf60', '#d9ef8b',
-                         '#fee08b', '#fc8d59', '#d73027']}
-
-# mean_rn_map = geemap.Map()
-# mean_rn_map.addLayer(mean_rn, vis_params)
-# mean_rn_map.centerObject(mean_rn, 12)
-# mean_rn_map.save('mean_rn_map.html')
 
 # %% TEMPORAL AVAILABILITY AND SEASONS
 
@@ -501,3 +471,50 @@ plot_means = season_means.melt(id_vars='Season', var_name='type',
                                value_name='net_rad')
 
 sns.catplot(x='Season', y='net_rad', data=plot_means, kind='bar', hue='type')
+
+
+# %% SAMPLE UPLOAD AND SPECTRAL SIGNATURES
+
+# Upload samples
+samples = gpd.read_file('vectors\\vector_layers.gpkg', layer='samples')
+
+# Transform to ee.FeatureCollection (from user_functions)
+samples_geom = shape_to_feature_coll(samples)
+
+
+# Function to get spectral signatures
+def get_spectral_signatures(img, lista):
+
+    # Creates a list
+    lista = ee.List(lista)
+
+    # Sample images
+    sampled = (img.select('SR_B[2-7]')
+               .sampleRegions(collection=samples_geom, scale=30))
+
+    # Save sampled pixels to list
+    return lista.add(sampled)
+
+
+# Get collection of sampled pixels
+spectral_coll = ee.FeatureCollection(
+    ee.List(dataset19.iterate(get_spectral_signatures, []))).flatten()
+
+# Selectors for reducing columns (classes to group over)
+selectors = ['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7', 'classes']
+
+spectral_list = (spectral_coll.reduceColumns(reducer=ee.Reducer.mean()
+                                             .repeat(6)
+                                             .group(groupField=6,
+                                                    groupName='classes'),
+                                             selectors=selectors)).getInfo()
+
+spectral_signatures = pd.DataFrame({'bands':selectors[:-1]})
+
+for i in range(0, len(spectral_list['groups'])):
+
+    classe = spectral_list['groups'][i]['classes']
+
+    means = spectral_list['groups'][i]['mean']
+
+    spectral_signatures[classe] = means

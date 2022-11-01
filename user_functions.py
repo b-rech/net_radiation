@@ -490,38 +490,32 @@ def list_info_df(properties_list):
     return infos
 
 
-# %% FUNCTION 02: IDENTIFY TIME GAPS
+# %% TRANSFORM SHAPEFILES TO EE.GEOMETRIES
 
-# Identify temporal gaps
-def month_gaps(dataframe, date_col, start, end):
+def shape_to_feature_coll(shapefile):
 
-    """
-    Return the months without scenes.
-    date_col: the name of the column with dates.
-    """
+    '''
+    Transforms a multipolygon shapefile (geopandas Dataframe) into
+    an ee.FeatureCollection
+    The shapefile must have a field called "classes"
+    '''
 
-    month_lack = []
+    # Empty list to save the polygons
+    samples_list = ee.List([])
 
-    # Generate list of lists [month, year] with observed values
-    months_observed = np.dstack(
-        [pd.DatetimeIndex(dataframe[date_col]).month.to_list(),
-         pd.DatetimeIndex(dataframe[date_col]).year.to_list()]).tolist()
+    # Iterate over each polygon
+    for pol in range(0, len(shapefile)):
 
+        # Selection of the feature of interest
+        polygon = (np.dstack(shapefile.geometry[pol].geoms[0]
+                             .exterior.coords.xy).tolist())
 
-    # Generate list of lists [month, year] with desired values
-    months_desired = np.dstack(
-        [pd.date_range(start=start, end=end, freq='m', inclusive='both')
-         .month.to_list(),
-         pd.date_range(start=start, end=end, freq='m', inclusive='both')
-         .year.to_list()]).tolist()
+        # Creation of a ee.Feature with the external coordinates
+        geometry = ee.Feature(ee.Geometry.Polygon(polygon))
 
-    # Verify wether the desired values are within the observed ones
-    for n in range(0, len(months_desired[0])):
+        geometry = geometry.set({'classes':shapefile.classes[pol]})
 
-        if months_desired[0][n] not in months_observed[0]:
+        # Append the geometry to the list
+        samples_list = samples_list.add(geometry)
 
-            month_lack.append(months_desired[0][n])
-
-    print(f'\nLacks in {len(month_lack)} months')
-
-    return month_lack
+    return ee.FeatureCollection(samples_list)
