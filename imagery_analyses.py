@@ -25,7 +25,9 @@ import pandas as pd
 import geopandas as gpd
 import geemap
 from matplotlib import pyplot as plt
+from matplotlib.patches import Rectangle
 import seaborn as sns
+import matplotlib.ticker as tkr
 plt.rcParams['figure.dpi'] = 300
 
 # Required scripts
@@ -129,8 +131,12 @@ def get_cloud_percent(image):
 dataset1 = landsat8.map(get_cloud_percent)
 
 # Filter images (cloudiness limit of 5%)
+# Remove two bad images (manually detected)
 # and apply cloud mask (from user_functions)
 dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 0.05))
+            .filter(ee.Filter.neq('system:index', 'LC08_219079_20151025'))
+            .filter(ee.Filter.neq('system:index', 'LC08_219079_20210227'))
+            .filter(ee.Filter.neq('system:index', 'LC08_220079_20140623'))
             .map(cloud_mask).sort('system:time_start'))
 
 # -----------------------------------------------------------------------------
@@ -366,29 +372,29 @@ dataset17 = dataset16.map(net_lw_rad)
 
 # %% PART 4: ALL-WAVE NET RADIATION ###########################################
 
+# Map function (from user_functions)
 dataset18 = dataset17.map(all_wave_rn)
-
-
-# %% TEMPORAL AVAILABILITY AND SEASONS
-
-sns.set_style('white')
 
 # Set season (from user_functions)
 dataset19 = dataset18.map(set_season)
 
+
+# %% TEMPORAL AVAILABILITY
+
+sns.set_style('white')
+
 # Retrieve collection metadata
 info_list = dataset19.getInfo()['features']
-info_df = list_info_df(info_list)
+images_metadata = list_info_df(info_list)
+images_metadata['year'] = images_metadata.date.dt.year
 
-# Extraction of years
-info_df['year'] = pd.DatetimeIndex(info_df.date).year
 
 # Create figure
-plot, ax = plt.subplots(nrows=10, figsize=(12, 6), dpi=300)
+plot, ax = plt.subplots(nrows=10, figsize=(10, 6), dpi=300)
 
 # Iterate on each axis (year)
 for year, axis in zip(
-        range(info_df.year.min(), info_df.year.max() + 1),
+        range(images_metadata.year.min(), images_metadata.year.max() + 1),
         range(0, 10)):
 
     # Styling
@@ -400,11 +406,18 @@ for year, axis in zip(
     ax[axis].grid(visible=True, which='major', axis='both')
 
     # Total available images (with good cloud cover)
-    sns.scatterplot(x='date', y=0, data=info_df[info_df.year == year],
-                    ax=ax[axis], legend=False)
+    sns.scatterplot(x='date', y=0,
+                    data=images_metadata[images_metadata.year == year],
+                    ax=ax[axis], legend=False, marker='s', hue='season',
+                    palette=['#fe9929', '#de2d26', '#31a354', '#3182bd'],
+                    hue_order=['Spring', 'Summer', 'Fall', 'Winter'])
 
-# handles, labels = ax[9].get_legend_handles_labels()
-# plot.legend(handles, labels, loc='upper center')
+
+handles = [Rectangle(xy=(0, 0), height=1, width=1, color=color)
+           for color in ['#fe9929', '#de2d26', '#31a354', '#3182bd']]
+
+plot.legend(handles=handles, labels=['Primavera', 'Verão', 'Outono', 'Inverno'],
+            loc='center right', handlelength=.5, handleheight=.5)
 
 ax[9].set(xticklabels=['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago',
                        'Set', 'Out', 'Nov', 'Dez'], label='Mês')
@@ -473,7 +486,7 @@ plot_means = season_means.melt(id_vars='Season', var_name='type',
 sns.catplot(x='Season', y='net_rad', data=plot_means, kind='bar', hue='type')
 
 
-# %% SAMPLE UPLOAD AND SPECTRAL SIGNATURES
+# %% SAMPLES UPLOAD AND SPECTRAL SIGNATURES
 
 # Upload samples
 samples = gpd.read_file('vectors\\vector_layers.gpkg', layer='samples')
@@ -490,7 +503,8 @@ def get_spectral_signatures(img, lista):
 
     # Sample images
     sampled = (img.select('SR_B[2-7]')
-               .sampleRegions(collection=samples_geom, scale=30))
+               .sampleRegions(collection=samples_geom, scale=30)
+               .map(lambda ft : ft.set({'date':img.date().format()})))
 
     # Save sampled pixels to list
     return lista.add(sampled)
@@ -500,21 +514,155 @@ def get_spectral_signatures(img, lista):
 spectral_coll = ee.FeatureCollection(
     ee.List(dataset19.iterate(get_spectral_signatures, []))).flatten()
 
-# Selectors for reducing columns (classes to group over)
-selectors = ['SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7', 'classes']
+# Get reflectances
+spectral_info = ee.List([spectral_coll.aggregate_array('date'),
+                         spectral_coll.aggregate_array('classes'),
+                         spectral_coll.aggregate_array('SR_B2'),
+                         spectral_coll.aggregate_array('SR_B3'),
+                         spectral_coll.aggregate_array('SR_B4'),
+                         spectral_coll.aggregate_array('SR_B5'),
+                         spectral_coll.aggregate_array('SR_B6'),
+                         spectral_coll.aggregate_array('SR_B7')]).getInfo()
 
-spectral_list = (spectral_coll.reduceColumns(reducer=ee.Reducer.mean()
-                                             .repeat(6)
-                                             .group(groupField=6,
-                                                    groupName='classes'),
-                                             selectors=selectors)).getInfo()
+# Create dataframe to populate with spectral information
+spectral_dataframe = pd.DataFrame({'date':pd.to_datetime(spectral_info[0])})
 
-spectral_signatures = pd.DataFrame({'bands':selectors[:-1]})
+# Name of columns
+cols = ['classes', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7']
+count = 1
 
-for i in range(0, len(spectral_list['groups'])):
+# Iterate to populate columns
+for i in cols:
 
-    classe = spectral_list['groups'][i]['classes']
+    spectral_dataframe[i] = spectral_info[count]
 
-    means = spectral_list['groups'][i]['mean']
+    count += 1
 
-    spectral_signatures[classe] = means
+
+# CREATE PLOT OF SPECTRAL SIGNATURES
+sns.set_theme(font='arial', style='whitegrid')
+
+# Dataset with means of each scene
+spectral_means = (spectral_dataframe.groupby(['date', 'classes'])
+                  .mean().reset_index())
+
+# Dataset with all pixels
+teste = spectral_dataframe.melt(id_vars=['date', 'classes'],
+                                           value_vars=cols[1:],
+                                           var_name='bands',
+                                           value_name='reflect')
+
+# Transform dataset to long format
+plot_spectral_df = spectral_means.melt(id_vars=['date', 'classes'],
+                                              value_vars=cols[1:],
+                                              var_name='bands',
+                                              value_name='reflect')
+
+# Create grid
+spect_grid = sns.FacetGrid(data=plot_spectral_df, col='classes',
+                           col_wrap=3, sharex=True, sharey=False)
+
+# # Map plots to grid - points
+spect_grid.map(sns.stripplot, 'bands', 'reflect',
+               alpha=0.25, color='#6baed6', zorder=0, label='Média por cena')
+
+spect_grid.map(sns.pointplot, 'bands', 'reflect',
+               errorbar=)
+
+sns.pairplot(data=spectral_dataframe, hue='classes')
+
+
+spect_grid.map(sns.pointplot, 'bands', 'reflect', join=False,
+               errorbar=('pi', 1), markers='x', order=cols[1:],
+               color='#08306b')
+
+# Map plots to grid -medians
+spect_grid.map(sns.pointplot, 'bands', 'reflect', join=False, errorbar='ci',
+               markers='x', order=cols[1:], color='red', estimator=np.median,
+               zorder=0, label='Média geral')
+
+# Configure axes labels
+spect_grid.set_xlabels('Banda')
+spect_grid.set_ylabels('Reflectância')
+
+# Titles
+classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
+
+for ax,title in zip(spect_grid.axes.flatten(),classes):
+    ax.set_title(title)
+    ax.yaxis.set_major_formatter(tkr.FuncFormatter(lambda y, p: f'{y:.2f}'))
+
+plt.tight_layout()
+
+# Save plot as tif
+#plt.savefig('spectral_signatures.tif', dpi=300)
+
+
+# %% EXTRACTION OF PARAMETERS OF INTEREST
+
+# Function to get parameter values
+def get_params(img, lista):
+
+    # Creates a list
+    lista = ee.List(lista)
+
+    # Sample images
+    sampled = (img.select(['albedo', 'emiss', 'net_sw_rad', 'net_lw_rad', 'Rn'])
+               .sampleRegions(collection=samples_geom, scale=30)
+               .map(lambda ft : ft.set({'date':img.date().format(),
+                                        'season':img.get('SEASON')})))
+
+    # Save sampled pixels to list
+    return lista.add(sampled)
+
+
+# Get collection of sampled pixels
+params_coll = ee.FeatureCollection(
+    ee.List(dataset19.iterate(get_params, []))).flatten()
+
+# Get values
+params_info = ee.List([params_coll.aggregate_array('date'),
+                       params_coll.aggregate_array('classes'),
+                       params_coll.aggregate_array('season'),
+                       params_coll.aggregate_array('albedo'),
+                       params_coll.aggregate_array('emiss'),
+                       params_coll.aggregate_array('net_sw_rad'),
+                       params_coll.aggregate_array('net_lw_rad'),
+                       params_coll.aggregate_array('Rn')]).getInfo()
+
+# Create dataframe to populate with spectral information
+params_dataframe = pd.DataFrame({'date':pd.to_datetime(params_info[0])})
+
+# Name of columns
+cols2 = ['classes', 'season', 'albedo', 'emiss', 'rns', 'rnl', 'rn']
+count = 1
+
+# Iterate to populate columns
+for i in cols2:
+
+    params_dataframe[i] = params_info[count]
+
+    count += 1
+
+# Create grid
+params_grid = sns.FacetGrid(data=params_dataframe, row='classes',
+                            sharex=True, sharey=False, aspect=5,
+                            row_order=classes)
+
+
+# Map plots to grid - means
+# params_grid.map(sns.pointplot, 'date', 'rns', join=True, errorbar=None,
+#                markers='x', errwidth=0, color='#08306b',
+#                zorder=0, label='Média geral')
+
+params_grid.map(sns.pointplot, 'date', 'rn', join=True, errorbar=None,
+               markers='.', errwidth=0, color='#08306b',
+               zorder=0, label='Média geral')
+
+
+# Configure axes labels
+spect_grid.set_xlabels('Banda')
+spect_grid.set_ylabels('Reflectância')
+
+# Titles
+titles = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
