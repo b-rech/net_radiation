@@ -5,40 +5,31 @@ TECHNOLOGICAL CENTER
 DEPT. OF SANITARY AND ENVIRONMENTAL ENGINEERING
 LABORATORY OF MARINE HYDRAULICS
 
-Created on Sat Sep  3 15:41:01 2022
+Created on 2022/09/03
 Author: Bruno Rech (b.rech@outlook.com)
 
 SCRIPT 2/3 - IMAGERY ANALYSES
 """
 
-# %% 1 DATA PREPARATION #######################################################
 
-# This part of the code prepares the data for the subsequent calculations.
-
-# -----------------------------------------------------------------------------
-# 1.1 LIBRARIES AND SCRIPTS
+# %% REQUIRED LIBRARIES AND SCRIPTS
 
 # Required libraries
 import ee
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-import geemap
-from matplotlib import pyplot as plt
-from matplotlib.patches import Rectangle
-import seaborn as sns
-import matplotlib.ticker as tkr
-plt.rcParams['figure.dpi'] = 300
 
 # Required scripts
+# user_functions includes user-defined functions used in the analyses
 from user_functions import *
 
 # GEE authentication and initialization
 #ee.Authenticate()
 ee.Initialize()
 
-# -----------------------------------------------------------------------------
-# 1.2 VECTOR LAYERS UPLOAD
+
+#%% VECTOR LAYERS UPLOAD
 
 # Upload contours of the basin and lagoon
 basin = gpd.read_file('vectors\\vector_layers.gpkg', layer='basin_area')
@@ -59,8 +50,14 @@ lagoon_geom = ee.Geometry.Polygon(lagoon_coord)
 rect = ee.Geometry.Rectangle([-48.37428696492995, -27.68296346714984,
                             -48.56174151517356, -27.42983615496652])
 
-# -----------------------------------------------------------------------------
-# 1.3 METEOROLOGICAL DATA UPLOAD
+# Upload samples
+samples = gpd.read_file('vectors\\vector_layers.gpkg', layer='samples')
+
+# Transform samples to ee.FeatureCollection (from user_functions)
+samples_geom = shape_to_feature_coll(samples)
+
+
+# %% METEOROLOGICAL DATA UPLOAD
 
 # Upload meteorological data from weather station
 met_data = pd.read_csv('data_station_inmet.csv', sep=';', decimal=',',
@@ -84,13 +81,13 @@ met_data['p_atm'] = met_data.loc[:, 'p_atm']/10
 # Units: atmospheric pressure in kPa, global radiation in kJ/m²,
 # air temperature (dry-bulb) in °C.
 
-# -----------------------------------------------------------------------------
-# 1.4 SELECTION OF LANDSAT DATA
 
-# Filter Landsat 8 imagery:
-    # by bounds;
-    # by processing level (L2SP = both optical and thermal bands);
-    # by sensors quality (0=worst, 9=best);
+# %% SELECTION OF LANDSAT AND SRTM DATA
+
+# Filter Landsat 8 imagery by:
+    # bounds;
+    # processing level (L2SP = both optical and thermal bands);
+    # sensors quality (0=worst, 9=best);
 landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
             .filterBounds(basin_geom)
             .filter(ee.Filter.contains('.geo', basin_geom))
@@ -98,9 +95,8 @@ landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
             .filter(ee.Filter.eq('IMAGE_QUALITY_OLI', 9))
             .filter(ee.Filter.eq('IMAGE_QUALITY_TIRS', 9)))
 
-# -----------------------------------------------------------------------------
-# 1.5 CLOUD COVER ASSESSMENT
 
+# CLOUD COVER ASSESSMENT
 
 # Function to retrieve cloud cover over the area of interest
 def get_cloud_percent(image):
@@ -131,7 +127,7 @@ def get_cloud_percent(image):
 dataset1 = landsat8.map(get_cloud_percent)
 
 # Filter images (cloudiness limit of 5%)
-# Remove two bad images (manually detected)
+# Remove 3 bad images (manually detected)
 # and apply cloud mask (from user_functions)
 dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 0.05))
             .filter(ee.Filter.neq('system:index', 'LC08_219079_20151025'))
@@ -139,8 +135,8 @@ dataset2 = (dataset1.filter(ee.Filter.lte('CLOUDINESS', 0.05))
             .filter(ee.Filter.neq('system:index', 'LC08_220079_20140623'))
             .map(cloud_mask).sort('system:time_start'))
 
-# -----------------------------------------------------------------------------
-# 1.6 ELEVATION DATA
+
+# ELEVATION DATA
 
 # Digital elevation model from NASADEM
 dem = ee.Image("NASA/NASADEM_HGT/001")
@@ -154,14 +150,14 @@ dem = dem.addBands(ee.Terrain.slope(dem).multiply(np.pi/180))
 # Convert to radians
 dem = dem.addBands(ee.Terrain.aspect(dem).subtract(180).multiply(np.pi/180))
 
-# -----------------------------------------------------------------------------
-# 1.7 FINAL SCENE ADJUSTMENTS
+
+# FINAL SCENE ADJUSTMENTS
 
 # Map functions:
-# Scale the bands (from user_functions)
-# Add DEM, slope and aspect
-# Add bands of lat and long coords (from user_functions)
-# Clip to the rectangle
+# Scale the bands (from user_functions);
+# Add DEM, slope and aspect;
+# Add bands of lat and long coords (from user_functions);
+# Clip to the rectangle;
 # Reproject to SIRGAS 2000 UTM zone 22S
 dataset3 = (dataset2
             .map(scale_L8)
@@ -171,12 +167,12 @@ dataset3 = (dataset2
             .map(lambda img : img.clip(rect))
             .map(lambda img : img.reproject(crs='EPSG:31982', scale=30)))
 
-# %% 2 SHORTWAVE RADIATION ####################################################
+
+# %% SHORTWAVE RADIATION
 
 # This part of the code provides the calculation of shortwave radiation.
 
-# -----------------------------------------------------------------------------
-# 2.1 RETRIEVAL OF ANGULAR PARAMETERS
+# RETRIEVAL OF ANGULAR PARAMETERS
 
 # Calculate declination, B, E and day of year (from user_functions)
 dataset4 = dataset3.map(declination)
@@ -228,8 +224,8 @@ dataset5 = dataset4.map(hour_angle)
 # incidence angle (cos_theta_rel) cosines (from user_functions)
 dataset6 = dataset5.map(cos_theta_hor).map(cos_theta_rel)
 
-# -----------------------------------------------------------------------------
-# 2.2 ATMOSPHERIC TRANSMISSIVITY
+
+# ATMOSPHERIC TRANSMISSIVITY
 
 # Calculate atmospheric pressure from elevation (from user_functions)
 dataset7 = dataset6.map(atm_pressure)
@@ -275,14 +271,13 @@ def vp_hum(image):
 # Atmospheric transmissivity (from user_functions)
 dataset8 = dataset7.map(vp_hum).map(prec_water).map(atm_trans)
 
-# -----------------------------------------------------------------------------
-# 2.2 DOWNWARD SHORTWAVE RADIATION
+
+# DOWNWARD SHORTWAVE RADIATION
 
 # Retrieve downward shortwave fluxes (from user_functions)
 dataset9 = dataset8.map(dw_sw_rad)
 
-# -----------------------------------------------------------------------------
-# 2.3 UPWARD SHORTWAVE RADIATION
+# UPWARD SHORTWAVE RADIATION
 
 # Calculate albedo (from user_functions)
 dataset10 = dataset9.map(get_albedo)
@@ -290,20 +285,16 @@ dataset10 = dataset9.map(get_albedo)
 # Retrieve upward shortwave radiation (from user_functions)
 dataset11 = dataset10.map(up_sw_rad)
 
-# -----------------------------------------------------------------------------
-# 2.4 SHORTWAVE RADIATION BUDGET
+# SHORTWAVE RADIATION BUDGET
 
-# Calculate shortwave radiation budget
+# Calculate shortwave radiation budget (from user_functions)
 dataset12 = dataset11.map(net_sw_rad)
 
-# Visualization
-mean_sw_rn = dataset12.select('net_sw_rad').mean().clip(basin_geom)
+
+# %%  LONGWAVE RADIATION
 
 
-# %% PART 3: LONGWAVE RADIATION ###############################################
-
-# -----------------------------------------------------------------------------
-# 3.1 DOWNWARD LONGWAVE RADIATION
+# DOWNWARD LONGWAVE RADIATION
 
 # Calculate atmospheric emissivity (from user_functions)
 dataset13 = dataset12.map(atm_emiss)
@@ -311,8 +302,8 @@ dataset13 = dataset12.map(atm_emiss)
 # Retrieve downward longwave radiation (from user_functions)
 dataset14 = dataset13.map(dw_lw_rad)
 
-# -----------------------------------------------------------------------------
-# 3.2 UPWARD LONGWAVE RADIATION
+
+# UPWARD LONGWAVE RADIATION
 
 # Calculate SAVI, LAI and emissivity
 def savi_lai_emiss(image):
@@ -363,14 +354,14 @@ dataset15 = dataset14.map(savi_lai_emiss)
 # Calculate Upward Longwave Radiation (from user_functions)
 dataset16 = dataset15.map(up_lw_rad)
 
-# -----------------------------------------------------------------------------
-# 3.3 LONGWAVE RADIATION BUDGET
+
+# LONGWAVE RADIATION BUDGET
 
 # Calculate longwave radiation budget (from user_functions)
 dataset17 = dataset16.map(net_lw_rad)
 
 
-# %% PART 4: ALL-WAVE NET RADIATION ###########################################
+# %% ALL-WAVE NET RADIATION
 
 # Map function (from user_functions)
 dataset18 = dataset17.map(all_wave_rn)
@@ -379,121 +370,19 @@ dataset18 = dataset17.map(all_wave_rn)
 dataset19 = dataset18.map(set_season)
 
 
-# %% TEMPORAL AVAILABILITY
-
-sns.set_style('white')
+# %% IMAGES METADATA
 
 # Retrieve collection metadata
 info_list = dataset19.getInfo()['features']
 images_metadata = list_info_df(info_list)
 images_metadata['year'] = images_metadata.date.dt.year
 
-
-# Create figure
-plot, ax = plt.subplots(nrows=10, figsize=(10, 6), dpi=300)
-
-# Iterate on each axis (year)
-for year, axis in zip(
-        range(images_metadata.year.min(), images_metadata.year.max() + 1),
-        range(0, 10)):
-
-    # Styling
-    ax[axis].set(xlim=(np.datetime64(f'{year}-01-01'),
-                       np.datetime64(f'{year}-12-31')),
-                 ylim=(-0.1, 0.1),
-                 xticklabels=[], yticklabels=[],
-                 ylabel = year, xlabel=' ')
-    ax[axis].grid(visible=True, which='major', axis='both')
-
-    # Total available images (with good cloud cover)
-    sns.scatterplot(x='date', y=0,
-                    data=images_metadata[images_metadata.year == year],
-                    ax=ax[axis], legend=False, marker='s', hue='season',
-                    palette=['#fe9929', '#de2d26', '#31a354', '#3182bd'],
-                    hue_order=['Spring', 'Summer', 'Fall', 'Winter'])
+# Save to csv
+images_metadata.to_csv('generated_data\\images_metadata.csv', sep=';',
+                       decimal=',', index=False)
 
 
-handles = [Rectangle(xy=(0, 0), height=1, width=1, color=color)
-           for color in ['#fe9929', '#de2d26', '#31a354', '#3182bd']]
-
-plot.legend(handles=handles, labels=['Primavera', 'Verão', 'Outono', 'Inverno'],
-            loc='center right', handlelength=.5, handleheight=.5)
-
-ax[9].set(xticklabels=['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago',
-                       'Set', 'Out', 'Nov', 'Dez'], label='Mês')
-
-
-# %% NET RADIATION SEASONAL MEANS
-
-# Basin limits without lagoon
-land_basin_geom = basin_geom.difference(lagoon_geom)
-
-# Seasons
-seasons = ['Spring', 'Summer', 'Fall', 'Winter']
-
-# Net shortwave radiation means
-land_nsr_means = []
-water_nsr_means = []
-
-# Net longwave radiation means
-land_nlr_means = []
-water_nlr_means = []
-
-# Net all-wave radiation means
-land_rn_means = []
-water_rn_means = []
-
-for season in seasons:
-
-    # Mean image of season
-    mean_image = (dataset19.select(['net_lw_rad', 'net_sw_rad', 'Rn'])
-                  .filter(ee.Filter.eq('SEASON', season)).mean())
-
-    # Mean of basin without lagoon
-    land_means = mean_image.reduceRegion(reducer=ee.Reducer.mean(),
-                                         geometry=land_basin_geom,
-                                         scale=30).getInfo()
-
-    # Mean over lagoon
-    water_means = mean_image.reduceRegion(reducer=ee.Reducer.mean(),
-                                         geometry=lagoon_geom,
-                                         scale=30).getInfo()
-
-    land_nsr_means.append(land_means['net_sw_rad'])
-    water_nsr_means.append(water_means['net_sw_rad'])
-
-    land_nlr_means.append(land_means['net_lw_rad'])
-    water_nlr_means.append(water_means['net_lw_rad'])
-
-    land_rn_means.append(land_means['Rn'])
-    water_rn_means.append(water_means['Rn'])
-
-
-season_means = pd.DataFrame({'Season':seasons,
-                             'Land_SW':land_nsr_means,
-                             'Land_LW':land_nlr_means,
-                             'Land_Rn':land_rn_means,
-                             'Water_SW':water_nsr_means,
-                             'Water_LW':water_nlr_means,
-                             'Water_Rn':water_rn_means})
-
-season_means.to_csv('season_means.csv', sep=';', decimal=',')
-
-
-plot_means = season_means.melt(id_vars='Season', var_name='type',
-                               value_name='net_rad')
-
-sns.catplot(x='Season', y='net_rad', data=plot_means, kind='bar', hue='type')
-
-
-# %% SAMPLES UPLOAD AND SPECTRAL SIGNATURES
-
-# Upload samples
-samples = gpd.read_file('vectors\\vector_layers.gpkg', layer='samples')
-
-# Transform to ee.FeatureCollection (from user_functions)
-samples_geom = shape_to_feature_coll(samples)
-
+# %% SAMPLES SPECTRAL SIGNATURES
 
 # Function to get spectral signatures
 def get_spectral_signatures(img, lista):
@@ -528,74 +417,19 @@ spectral_info = ee.List([spectral_coll.aggregate_array('date'),
 spectral_dataframe = pd.DataFrame({'date':pd.to_datetime(spectral_info[0])})
 
 # Name of columns
-cols = ['classes', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7']
+spectral_cols = ['classes', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7']
 count = 1
 
 # Iterate to populate columns
-for i in cols:
+for i in spectral_cols:
 
     spectral_dataframe[i] = spectral_info[count]
 
     count += 1
 
-
-# CREATE PLOT OF SPECTRAL SIGNATURES
-sns.set_theme(font='arial', style='whitegrid')
-
-# Dataset with means of each scene
-spectral_means = (spectral_dataframe.groupby(['date', 'classes'])
-                  .mean().reset_index())
-
-# Dataset with all pixels
-teste = spectral_dataframe.melt(id_vars=['date', 'classes'],
-                                           value_vars=cols[1:],
-                                           var_name='bands',
-                                           value_name='reflect')
-
-# Transform dataset to long format
-plot_spectral_df = spectral_means.melt(id_vars=['date', 'classes'],
-                                              value_vars=cols[1:],
-                                              var_name='bands',
-                                              value_name='reflect')
-
-# Create grid
-spect_grid = sns.FacetGrid(data=plot_spectral_df, col='classes',
-                           col_wrap=3, sharex=True, sharey=False)
-
-# # Map plots to grid - points
-spect_grid.map(sns.stripplot, 'bands', 'reflect',
-               alpha=0.25, color='#6baed6', zorder=0, label='Média por cena')
-
-spect_grid.map(sns.pointplot, 'bands', 'reflect',
-               errorbar=)
-
-sns.pairplot(data=spectral_dataframe, hue='classes')
-
-
-spect_grid.map(sns.pointplot, 'bands', 'reflect', join=False,
-               errorbar=('pi', 1), markers='x', order=cols[1:],
-               color='#08306b')
-
-# Map plots to grid -medians
-spect_grid.map(sns.pointplot, 'bands', 'reflect', join=False, errorbar='ci',
-               markers='x', order=cols[1:], color='red', estimator=np.median,
-               zorder=0, label='Média geral')
-
-# Configure axes labels
-spect_grid.set_xlabels('Banda')
-spect_grid.set_ylabels('Reflectância')
-
-# Titles
-classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
-
-for ax,title in zip(spect_grid.axes.flatten(),classes):
-    ax.set_title(title)
-    ax.yaxis.set_major_formatter(tkr.FuncFormatter(lambda y, p: f'{y:.2f}'))
-
-plt.tight_layout()
-
-# Save plot as tif
-#plt.savefig('spectral_signatures.tif', dpi=300)
+# Save to csv
+spectral_dataframe.to_csv('generated_data\\spectral_data.csv',
+                          decimal=',', sep=';', index=False)
 
 
 # %% EXTRACTION OF PARAMETERS OF INTEREST
@@ -634,35 +468,17 @@ params_info = ee.List([params_coll.aggregate_array('date'),
 params_dataframe = pd.DataFrame({'date':pd.to_datetime(params_info[0])})
 
 # Name of columns
-cols2 = ['classes', 'season', 'albedo', 'emiss', 'rns', 'rnl', 'rn']
+rad_cols = ['classes', 'season', 'albedo', 'emiss', 'rns', 'rnl', 'rn']
 count = 1
 
 # Iterate to populate columns
-for i in cols2:
+for i in rad_cols:
 
     params_dataframe[i] = params_info[count]
 
     count += 1
 
-# Create grid
-params_grid = sns.FacetGrid(data=params_dataframe, row='classes',
-                            sharex=True, sharey=False, aspect=5,
-                            row_order=classes)
 
-
-# Map plots to grid - means
-# params_grid.map(sns.pointplot, 'date', 'rns', join=True, errorbar=None,
-#                markers='x', errwidth=0, color='#08306b',
-#                zorder=0, label='Média geral')
-
-params_grid.map(sns.pointplot, 'date', 'rn', join=True, errorbar=None,
-               markers='.', errwidth=0, color='#08306b',
-               zorder=0, label='Média geral')
-
-
-# Configure axes labels
-spect_grid.set_xlabels('Banda')
-spect_grid.set_ylabels('Reflectância')
-
-# Titles
-titles = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
+# Save to csv
+params_dataframe.to_csv('generated_data\\radiation_data.csv', decimal=',',
+                        sep=';', index=False)
