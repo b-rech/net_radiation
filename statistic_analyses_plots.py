@@ -67,15 +67,17 @@ for year, axis in zip(
                     data=metadata[metadata.year == year],
                     ax=ax[axis], legend=False, marker='s', hue='season',
                     palette=['#ff7f00', '#de2d26', '#33a02c', '#3182bd'],
-                    hue_order=['Spring', 'Summer', 'Fall', 'Winter'])
+                    hue_order=['Spring', 'Summer', 'Fall', 'Winter'],
+                    edgecolor='black')
 
 # Legend handles
-handles = [Rectangle(xy=(0, 0), height=1, width=1, color=color)
+handles = [Rectangle(xy=(0, 0), height=1, width=1, facecolor=color,
+                     edgecolor='black', linewidth=.5)
            for color in ['#ff7f00', '#de2d26', '#33a02c', '#3182bd']]
 
 # Add legend
 plot.legend(handles=handles, labels=['Primavera', 'Verão', 'Outono', 'Inverno'],
-            loc='lower center', handlelength=.5, handleheight=.5, ncol=4)
+            loc='lower center', handlelength=.8, handleheight=.8, ncol=4)
 
 # Months (x axis)
 ax[9].set(xticklabels=['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago',
@@ -99,55 +101,112 @@ spectral_to_plot = spectral_data.melt(id_vars=['date', 'classes'],
                                       var_name='bands',
                                       value_name='reflect')
 
-teste = spectral_to_plot.groupby(['classes', 'bands']).quantile(.95)
-
 # Create grid
 spectral_grid = sns.FacetGrid(data=spectral_to_plot, col='classes',
-                              col_wrap=3, sharex=True, sharey=False,
-                              col_order=classes, hue='bands',
-                              hue_order=spectral_cols)
+                              col_wrap=3, col_order=classes,
+                              sharex=False, sharey=False)
 
-# All points
-# spectral_grid.map(sns.stripplot, 'bands', 'reflect', marker='.', size=1.5,
-#                   alpha=0.2, color='#6baed6', zorder=1)
 
 # Mean points
-spectral_grid.map(sns.pointplot, 'bands', 'reflect', join=False,
-                  errorbar=('pi', 100), errwidth=2, markers='.', order=spectral_cols,
-                  color='#08306b')
-
-
-
+spectral_grid.map(sns.pointplot, 'bands', 'reflect', markers='.', join=False,
+                  errorbar=('pi', 95), order=spectral_cols, errwidth=1,
+                  capsize=.4, n_boot=500000, color='black')
 
 
 # Configure axes labels
-spect_grid.set_xlabels('Banda')
-spect_grid.set_ylabels('Reflectância')
+spectral_grid.set_xlabels('Banda')
+spectral_grid.set_ylabels('Reflectância')
 
-
-for ax,title in zip(spect_grid.axes.flatten(),classes):
-    ax.set_title(title)
+# Add classes titles and format y ticks
+for ax, title in zip(spectral_grid.axes.flatten(), classes):
+    ax.set_title(title, fontweight='bold')
     ax.yaxis.set_major_formatter(tkr.FuncFormatter(lambda y, p: f'{y:.2f}'))
 
 plt.tight_layout()
 
 # Save plot as tif
-#plt.savefig('spectral_signatures.tif', dpi=300)
+# plt.savefig('spectral_signatures.tif', dpi=300)
 
-# %% BOXPLOT - NET RADIATION BY SEASON
 
-sns.set_style('whitegrid')
+# %% SEASONAL BOXPLOT FUNCTION
 
-classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
+# Define function
+def boxplot_seasons(param, ylabel):
 
-# Facecolor and edgecolor
-rn_boxplot_fc = 'black'
-rn_boxplot_ec = 'black'
+    sns.set_style('whitegrid')
 
-# Create plot - boxplot by season
-season_boxplot = sns.FacetGrid(data=radiation_data, col='classes',
-                               sharex=False, sharey=False,col_wrap=2,
-                               col_order=classes, aspect=1.5)
+    classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
+
+    # Facecolor and edgecolor
+    rn_boxplot_fc = 'black'
+    rn_boxplot_ec = 'black'
+
+    # Create plot - boxplot by season
+    season_boxplot = sns.FacetGrid(data=radiation_data, col='classes',
+                                   sharex=False, sharey=False,col_wrap=2,
+                                   col_order=classes, aspect=1.5)
+
+    # Dictionary of colors for seasons
+    season_colors = {'Spring':'#ff7f00', 'Summer':'#de2d26',
+                     'Fall':'#33a02c', 'Winter':'#3182bd'}
+
+    # Seasons in order to be displayed
+    season_order = ['Spring', 'Summer', 'Fall', 'Winter']
+
+    # Map plots to grid
+    season_boxplot.map(sns.boxplot, 'season', param,'season', showmeans=True,
+                       hue_order=season_order, order=season_order, dodge=False,
+                       palette=season_colors,
+                       flierprops={'marker':'.',
+                                   'markerfacecolor':rn_boxplot_ec,
+                                   'markeredgecolor':rn_boxplot_ec},
+                       boxprops={'edgecolor':rn_boxplot_ec, 'linewidth':1},
+                       whiskerprops={'color':rn_boxplot_ec, 'linewidth':1},
+                       capprops={'color':rn_boxplot_ec, 'linewidth':1},
+                       medianprops={'color':rn_boxplot_ec, 'linewidth':1},
+                       meanprops={'marker':'s',
+                                  'markerfacecolor':rn_boxplot_ec,
+                                  'markeredgecolor':rn_boxplot_ec,
+                                  'markersize':4})
+
+
+    # Configure axes labels
+    season_boxplot.set_xlabels(' ')
+    season_boxplot.set_ylabels(ylabel, fontsize=10)
+
+    # Add classes titles
+    for ax, title in zip(season_boxplot.axes.flatten(), classes):
+        ax.set_title(title)
+
+    # Set x tick labels
+    season_boxplot.set_xticklabels(['Primavera', 'Verão', 'Outono', 'Inverno'],
+                                   fontsize=11)
+
+    return season_boxplot
+
+# %% SEASONAL BOXPLOTS
+
+# Short wave radiation budget
+boxplot_seasons(param='rns', ylabel='Radiação ($Wm^{-2}$)')
+
+# Long wave radiation budget
+boxplot_seasons(param='rnl', ylabel='Radiação ($Wm^{-2}$)')
+
+# All wave radiation budget
+boxplot_seasons(param='rn', ylabel='Radiação ($Wm^{-2}$)')
+
+
+# %% TIME SERIES
+
+# Data to long format
+rad_plot = (radiation_data.melt(id_vars=['date', 'classes', 'season'],
+                                value_vars=['rnl', 'rns', 'rn'],
+                                var_name='type', value_name='rad'))
+
+# Dataframe with mean values
+radiation_means = (radiation_data.groupby(['date', 'classes', 'season'])
+                   .mean().reset_index(drop=False))
+radiation_means['date'] = pd.to_datetime(radiation_means.date)
 
 # Dictionary of colors for seasons
 season_colors = {'Spring':'#ff7f00', 'Summer':'#de2d26',
@@ -156,40 +215,20 @@ season_colors = {'Spring':'#ff7f00', 'Summer':'#de2d26',
 # Seasons in order to be displayed
 season_order = ['Spring', 'Summer', 'Fall', 'Winter']
 
-# Map plots to grid
-season_boxplot.map(sns.boxplot, 'season', 'rn','season', showmeans=True,
-                   hue_order=season_order, order=season_order, dodge=False,
-                   palette=season_colors,
-                   flierprops={'marker':'.', 'markerfacecolor':rn_boxplot_ec,
-                               'markeredgecolor':rn_boxplot_ec},
-                   boxprops={'edgecolor':rn_boxplot_ec, 'linewidth':1},
-                   whiskerprops={'color':rn_boxplot_ec, 'linewidth':1},
-                   capprops={'color':rn_boxplot_ec, 'linewidth':1},
-                   medianprops={'color':rn_boxplot_ec, 'linewidth':1},
-                   meanprops={'marker':'s', 'markerfacecolor':rn_boxplot_ec,
-                               'markeredgecolor':rn_boxplot_ec,
-                               'markersize':4})
+# Crete grid
+rad_time_grid = sns.FacetGrid(data=radiation_means, row='classes', aspect=6,
+                              sharey=False, sharex=False, height=1.6)
 
+# Scatterplot
+rad_time_grid.map(sns.scatterplot, 'date', 'rn', 'season',
+                  palette=season_colors, legend=True)
 
-# Configure axes labels
-season_boxplot.set_xlabels(' ')
-season_boxplot.set_ylabels('Saldo de radiação ($Wm^{-2}$)', fontsize=10)
+# Lineplot
+rad_time_grid.map(sns.lineplot, 'date', 'rn', alpha=0.3, color='black',
+                  zorder=0)
 
-# Add classes titles
-for ax, title in zip(season_boxplot.axes.flatten(), classes):
-    ax.set_title(title)
+rad_time_grid.add_legend(ncol=4, loc='lower center', label_order=season_order,
+                         labels=['Spring', 'Summer', 'Fall', 'Winter'])
 
-# Set x tick labels
-season_boxplot.set_xticklabels(['Primavera', 'Verão', 'Outono', 'Inverno'],
-                               fontsize=10)
-
-# %% PLOT - NET RADIATION OVER TIME
-
-sns.set_style('whitegrid')
-
-classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
-
-# Create plot - boxplot by season
-season_boxplot = sns.FacetGrid(data=radiation_data, col='classes',
-                               sharex=True, sharey=False,col_wrap=3,
-                               col_order=classes)
+rad_time_grid.set_xlabels(' ')
+rad_time_grid.set_ylabels('Radiação ($Wm^{-2}$)')
