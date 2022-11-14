@@ -19,6 +19,7 @@ import ee
 import numpy as np
 import pandas as pd
 import geopandas as gpd
+import geemap
 
 # Required scripts
 # user_functions includes user-defined functions used in the analyses
@@ -93,7 +94,8 @@ landsat8 = (ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')
             .filter(ee.Filter.contains('.geo', basin_geom))
             .filter(ee.Filter.eq('PROCESSING_LEVEL', 'L2SP'))
             .filter(ee.Filter.eq('IMAGE_QUALITY_OLI', 9))
-            .filter(ee.Filter.eq('IMAGE_QUALITY_TIRS', 9)))
+            .filter(ee.Filter.eq('IMAGE_QUALITY_TIRS', 9))
+            .filterDate(start='2013-01-01', opt_end='2022-09-30'))
 
 
 # CLOUD COVER ASSESSMENT
@@ -369,6 +371,23 @@ dataset18 = dataset17.map(all_wave_rn)
 # Set season (from user_functions)
 dataset19 = dataset18.map(set_season)
 
+# Extraction of mean seasonal data
+# for season in ['Spring', 'Summer', 'Fall', 'Winter']:
+
+#     mean_image = (dataset19.filter(ee.Filter.eq('SEASON', season))
+#                   .select(['albedo', 'net_sw_rad', 'net_lw_rad', 'Rn'])
+#                   .mean())
+
+#     geemap.ee_export_image(mean_image,
+#                            filename=f'generated_data\\mean_{season}.tif',
+#                            region=basin_geom, scale=30, file_per_band=False)
+
+# # Extraction of general means
+# geemap.ee_export_image((dataset19
+#                         .select(['albedo', 'net_sw_rad', 'net_lw_rad', 'Rn'])
+#                         .mean()),
+#                        filename=f'generated_data\\mean_all_images.tif',
+#                        region=basin_geom, scale=30, file_per_band=False)
 
 # %% IMAGES METADATA
 
@@ -480,5 +499,5 @@ for i in rad_cols:
 
 
 # Save to csv
-params_dataframe.to_csv('generated_data\\radiation_data.csv', decimal=',',
-                        sep=';', index=False)
+# params_dataframe.to_csv('generated_data\\radiation_data.csv', decimal=',',
+#                         sep=';', index=False)
