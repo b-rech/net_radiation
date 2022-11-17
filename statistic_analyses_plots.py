@@ -42,6 +42,7 @@ radiation_data = pd.read_csv('generated_data\\radiation_data.csv', sep=';',
                             decimal=',')
 radiation_data['date'] = pd.to_datetime(radiation_data.date)
 
+
 # %% PLOT - TEMPORAL DISTRIBUTION OF IMAGES
 
 # Create figure
@@ -183,6 +184,44 @@ albedo['var_coef'] = albedo.sd/albedo.albedo
 # albedo.to_csv('generated_data\\albedo_means.csv', decimal=',',
 #               sep=';')
 
+
+# %% TABLE - MEAN EMISSIVITY
+
+# Calculate means
+emiss = radiation_data.groupby('classes').mean()
+
+# Calculate standard deviation
+emiss['sd'] = radiation_data.groupby('classes').std()['emiss']
+
+# Create dataframe
+emiss = emiss[['emiss', 'sd']]
+
+# Calculate coefficient of variation
+emiss['var_coef'] = emiss.sd/emiss.emiss
+
+# Save to csv
+emiss.to_csv('generated_data\\emiss_means.csv', decimal=',',
+              sep=';')
+
+
+# %% TABLE - MEAN TEMPERATURE
+
+# Calculate means
+temp = radiation_data.groupby('classes').mean() - 273.15
+
+# Calculate standard deviation
+temp['sd'] = radiation_data.groupby('classes').std()['temp']
+
+# Create dataframe
+temp = temp[['temp', 'sd']]
+
+# Calculate coefficient of variation
+temp['var_coef'] = temp.sd/temp.temp
+
+# Save to csv
+# temp.to_csv('generated_data\\temperature_means.csv', decimal=',',
+#             sep=';')
+
 # %% PLOT - ALBEDO
 
 
@@ -250,8 +289,8 @@ def boxplot_seasons(param, ylabel):
 
     # Create plot - boxplot by season
     season_boxplot = sns.FacetGrid(data=radiation_data, col='classes',
-                                   sharex=False, sharey=False,col_wrap=2,
-                                   col_order=classes, aspect=1.5)
+                                   sharex=True, sharey=False,col_wrap=3,
+                                   col_order=classes, aspect=1, height=2.2)
 
     # Dictionary of colors for seasons
     season_colors = {'Spring':'#ff7f00', 'Summer':'#de2d26',
@@ -274,7 +313,7 @@ def boxplot_seasons(param, ylabel):
                        meanprops={'marker':'s',
                                   'markerfacecolor':rn_boxplot_ec,
                                   'markeredgecolor':rn_boxplot_ec,
-                                  'markersize':4})
+                                  'markersize':3})
 
 
     # Configure axes labels
@@ -286,8 +325,13 @@ def boxplot_seasons(param, ylabel):
         ax.set_title(title, fontweight='bold')
 
     # Set x tick labels
-    season_boxplot.set_xticklabels(['Primavera', 'Verão', 'Outono', 'Inverno'],
-                                   fontsize=11)
+    season_boxplot.set_xticklabels([None]*4)
+
+    season_boxplot.add_legend(ncol=1, loc=(.8, .10), title='Estações')
+
+    new_labels = ['Primavera', 'Verão', 'Outono', 'Inverno']
+    for t, l in zip(season_boxplot._legend.texts, new_labels):
+        t.set_text(l)
 
     return season_boxplot
 
@@ -295,15 +339,18 @@ def boxplot_seasons(param, ylabel):
 # %% SEASONAL BOXPLOTS
 
 # Short wave radiation budget
-boxplot_seasons(param='rns', ylabel='Radiação ($Wm^{-2}$)')
-
+boxplot_seasons(param='rns', ylabel='$R_n^S ~ (Wm^{-2})$')
+plt.tight_layout()
 plt.savefig('boxplot_rns.tif', dpi=300)
 
 # Long wave radiation budget
-boxplot_seasons(param='rnl', ylabel='Radiação ($Wm^{-2}$)')
+boxplot_seasons(param='rnl', ylabel='$R_n^L ~ (Wm^{-2})$')
+plt.tight_layout()
+plt.savefig('boxplot_rnl.tif', dpi=300)
 
 # All wave radiation budget
-boxplot_seasons(param='rn', ylabel='Radiação ($Wm^{-2}$)')
+boxplot_seasons(param='rn', ylabel='$R_n ~ (Wm^{-2})$')
+plt.tight_layout()
 plt.savefig('boxplot_rn.tif', dpi=300)
 
 # %% TABLE - SHORTWAVE NET RADIATION PER SEASON
@@ -333,7 +380,7 @@ lw_rad_seasonal_means = (rad_seasonal_means[['classes', 'season', 'rnl']]
                          .pivot(index='season',columns='classes',
                                 values='rnl'))
 
-# # Save to csv
+# Save to csv
 # lw_rad_seasonal_means.to_csv('generated_data\\mean_net_longwave.csv',
 #                               sep=';', decimal=',')
 
@@ -379,15 +426,19 @@ rad_time_grid = sns.FacetGrid(data=radiation_means, row='classes', aspect=6,
                               sharey=False, sharex=False, height=1.6)
 
 # Scatterplot
-rad_time_grid.map(sns.scatterplot, 'date', 'rn', 'season',
-                  palette=season_colors, legend=True, edgecolor='black')
+# rad_time_grid.map(sns.scatterplot, 'date', 'rn', 'season',
+#                   palette=season_colors, legend=True, edgecolor='black')
 
 # Lineplot
-rad_time_grid.map(sns.lineplot, 'date', 'rn', alpha=0.3, color='black',
+# rad_time_grid.map(sns.lineplot, 'date', 'rn', alpha=0.3, color='black',
+#                   zorder=0)
+
+rad_time_grid.map(sns.lineplot, 'date', 'rnl', alpha=0.3, color='black',
                   zorder=0)
 
 rad_time_grid.add_legend(ncol=4, loc='lower center', label_order=season_order)
 
+rad_time_grid.set(yscale='log')
 
 new_labels = ['Primavera', 'Verão', 'Outono', 'Inverno']
 for t, l in zip(rad_time_grid._legend.texts, new_labels):
@@ -397,101 +448,181 @@ rad_time_grid.set_xlabels(' ')
 rad_time_grid.set_ylabels('Radiação ($Wm^{-2}$)')
 
 
-# %%
+def facetgrid_two_axes(*args, **kwargs):
+    data = radiation_means
+    dual_axis = kwargs.pop('dual_axis')
+    alpha = kwargs.pop('alpha', 0.2)
+    kwargs.pop('color')
+    ax = plt.gca()
+    if dual_axis:
+        ax2 = ax.twinx()
+        ax2.set_ylabel('Second Axis!')
 
-# Define function
-def hist_seasons(param, ylabel):
+    ax.plot(data['date'],data['rns'], **kwargs, color='red',alpha=alpha)
+    if dual_axis:
+        ax2.plot(data['date'],data['rnl'], **kwargs, color='blue',alpha=alpha)
 
-    sns.set_style('whitegrid')
+rad_time_grid = sns.FacetGrid(data=radiation_means, row='classes', aspect=6,
+                              sharey=False, sharex=False, height=1.6)
+rad_time_grid.map(facetgrid_two_axes, dual_axis=True)
 
-    classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
+grid_test = sns.FacetGrid(data=radiation_means, col='classes', col_wrap=4,
+                              sharey=False, sharex=False)
 
-    # Facecolor and edgecolor
-    rn_boxplot_fc = 'black'
-    rn_boxplot_ec = 'black'
-
-    # Create plot - boxplot by season
-    season_hist = sns.FacetGrid(data=radiation_data, col='classes',
-                                sharex=False, sharey=False, row='season')
-
-    # Dictionary of colors for seasons
-    season_colors = {'Spring':'#ff7f00', 'Summer':'#de2d26',
-                     'Fall':'#33a02c', 'Winter':'#3182bd'}
-
-    # Seasons in order to be displayed
-    season_order = ['Spring', 'Summer', 'Fall', 'Winter']
-
-    # Map plots to grid
-    season_hist.map(sns.histplot, param)
+grid_test.map(sns.scatterplot, 'rnl', 'rns')
 
 
-    return season_hist
+# %% RELATION BETWEEN SHORT AND LONG BUDGETS
 
+sns.set_style('whitegrid')
 
-# %% KRUSKAL-WALIS TESTS
+# Mean values per scene
+rad_image_means = (radiation_data.groupby(['date', 'classes', 'season'])
+                   .mean().reset_index())
 
 # Classes
 classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
 
-# Radiation data means per scene
-mean_rad_data = (radiation_data.groupby(['date', 'classes', 'season'])
-                 .mean().reset_index())
+# List to save correlations
+corr = []
 
-
-statistics = []
-pvalues = []
-
+# Pearson correlations
 for classe in classes:
 
-    # Filtered data for the selected class
-    data = mean_rad_data[mean_rad_data.classes==classe]
+    # Select class
+    data = rad_image_means[rad_image_means.classes==classe]
 
-    # Spring samples
-    spring = data[data.season=='Spring']['rn'].tolist()
+    # Append correlation to list
+    corr.append(data[['rns', 'rnl']].corr().iloc[0, 1])
 
-    # Summer samples
-    summer = data[data.season=='Summer']['rn'].tolist()
+# Correlation grid
+corr_grid = sns.FacetGrid(data=rad_image_means, col='classes', col_wrap=3,
+                          col_order=classes, sharex=False, sharey=False)
 
-    # Fall samples
-    fall = data[data.season=='Fall']['rn'].tolist()
+# Map plots
+corr_grid.map(sns.regplot, 'rnl', 'rns', ci=None,
+              line_kws={'color':'#e31a1c', 'linewidth':1, 'linestyle':'--'},
+              scatter_kws={'facecolor':'#deebf7', 'edgecolor':'#084594'})
 
-    # Winter samples
-    winter = data[data.season=='Winter']['rn'].tolist()
+# Set xy labels
+corr_grid.set_xlabels('$R_n^L ~ (Wm^{-2})$')
+corr_grid.set_ylabels('$R_n^S ~ (Wm^{-2})$')
 
-    stats.kruskal(spring, summer, fall, winter)
+# Add classes titles and correlation coefficients
+for ax, title, cor in zip(corr_grid.axes.flatten(), classes, corr):
+    ax.set_title(title, fontweight='bold')
+    ax.annotate('r = ' + str(format(cor, '.2f')),
+                xy=(0.7, 0.85), xycoords='axes fraction',
+                bbox=dict(boxstyle="square", fc="w", ec='black'))
 
-    # Performs test
-    kw_test = stats.kruskal(spring, summer, fall, winter, nan_policy='raise')
+plt.tight_layout()
 
-    print(kw_test)
-    # Retrieve info
-    statistics.append(kw_test.statistic)
-    pvalues.append(kw_test.pvalue)
+plt.savefig('correlation_rad.tif', dpi=300)
 
-# Create dataframe with results
-kw_test_results = pd.DataFrame({'classes':classes,
-                                'statistic':statistics,
-                                'pvalue':pvalues})
+# %% KRUSKAL-WALIS TESTS
 
-# Save to csv
-# kw_test_results.to_csv('generated_data\\kruskal_wallis_results.csv', sep=';',
-#                         decimal=',', index=False)
+# Function for Kruskal-Wallis test
+def kruskal_wallis(input_data, param):
 
-dunn_test_results = pd.DataFrame(
-    columns=['Spring', 'Summer', 'Fall', 'Winter', 'classes'])
+    # Classes
+    classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
 
-for classe in classes:
+    # Radiation data means per scene
+    mean_rad_data = (input_data.groupby(['date', 'classes', 'season'])
+                     .mean().reset_index())
 
-    data = mean_rad_data[mean_rad_data.classes==classe]
+    statistics = []
+    pvalues = []
 
-    test_output = (sp.posthoc_dunn(data, val_col='rn', group_col='season',
-                                  p_adjust='bonferroni')
-                   .reindex(['Spring', 'Summer', 'Fall', 'Winter'])
-                   .reset_index())
+    for classe in classes:
 
-    test_output['classes'] = [classe]*4
+        # Filtered data for the selected class
+        data = mean_rad_data[mean_rad_data.classes==classe]
 
-    dunn_test_results = pd.concat([dunn_test_results, test_output])
+        # Spring samples
+        spring = data[data.season=='Spring'][param].tolist()
 
-# dunn_test_results.to_csv('generated_data\\dunn_test_results.csv', sep=';',
-#                           decimal=',', index=False)
+        # Summer samples
+        summer = data[data.season=='Summer'][param].tolist()
+
+        # Fall samples
+        fall = data[data.season=='Fall'][param].tolist()
+
+        # Winter samples
+        winter = data[data.season=='Winter'][param].tolist()
+
+        # Performs test
+        kw_test = stats.kruskal(spring, summer, fall, winter, nan_policy='raise')
+
+        # Retrieve info
+        statistics.append(kw_test.statistic)
+        pvalues.append(kw_test.pvalue)
+
+    # Create dataframe with results
+    kw_test_results = pd.DataFrame({'classes':classes,
+                                    'statistic':statistics,
+                                    'pvalue':pvalues})
+
+    return kw_test_results
+
+
+# Function for Dunn test
+def dunn_test(input_data, param):
+
+    # Classes
+    classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
+
+    dunn_test_results = pd.DataFrame(
+        columns=['Spring', 'Summer', 'Fall', 'Winter', 'classes'])
+
+    # Radiation data means per scene
+    mean_rad_data = (input_data.groupby(['date', 'classes', 'season'])
+                     .mean().reset_index())
+
+    for classe in classes:
+
+        data = mean_rad_data[mean_rad_data.classes==classe]
+
+        test_output = (sp.posthoc_dunn(data, val_col=param, group_col='season',
+                                      p_adjust='bonferroni')
+                       .reindex(['Spring', 'Summer', 'Fall', 'Winter'])
+                       .reset_index())
+
+        test_output['classes'] = [classe]*4
+
+        dunn_test_results = pd.concat([dunn_test_results, test_output])
+
+    return dunn_test_results
+
+
+# Kruskal-Wallis: shortwave radiation
+kw_test_rns = kruskal_wallis(radiation_data, 'rns')
+# kw_test_rns.to_csv('generated_data\\kw_test_rns.csv', sep=';',
+#                    decimal=',', index=False)
+
+# Dunn: shortwave radiation
+dunn_test_rns = dunn_test(radiation_data, 'rns')
+# dunn_test_rns.to_csv('generated_data\\dunn_test_rns.csv', sep=';',
+#                      decimal=',', index=False)
+
+
+# Kruskal-Wallis: longwave radiation
+kw_test_rnl = kruskal_wallis(radiation_data, 'rnl')
+# kw_test_rnl.to_csv('generated_data\\kw_test_rnl.csv', sep=';',
+#                     decimal=',', index=False)
+
+# Dunn: longwave radiation
+dunn_test_rnl = dunn_test(radiation_data, 'rnl')
+# dunn_test_rnl.to_csv('generated_data\\dunn_test_rnl.csv', sep=';',
+#                       decimal=',', index=False)
+
+
+# Kruskal-Wallis: allwave radiation
+kw_test_rn = kruskal_wallis(radiation_data, 'rn')
+# kw_test_rn.to_csv('generated_data\\kw_test_rn.csv', sep=';',
+#                    decimal=',', index=False)
+
+# Dunn: allwave radiation
+dunn_test_rn = dunn_test(radiation_data, 'rn')
+# dunn_test_rn.to_csv('generated_data\\dunn_test_rn.csv', sep=';',
+#                     decimal=',', index=False)

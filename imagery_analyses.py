@@ -460,7 +460,8 @@ def get_params(img, lista):
     lista = ee.List(lista)
 
     # Sample images
-    sampled = (img.select(['albedo', 'emiss', 'net_sw_rad', 'net_lw_rad', 'Rn'])
+    sampled = (img.select(['albedo', 'emiss', 'ST_B10',
+                           'net_sw_rad','net_lw_rad', 'Rn'])
                .sampleRegions(collection=samples_geom, scale=30)
                .map(lambda ft : ft.set({'date':img.date().format(),
                                         'season':img.get('SEASON')})))
@@ -479,6 +480,7 @@ params_info = ee.List([params_coll.aggregate_array('date'),
                        params_coll.aggregate_array('season'),
                        params_coll.aggregate_array('albedo'),
                        params_coll.aggregate_array('emiss'),
+                       params_coll.aggregate_array('ST_B10'),
                        params_coll.aggregate_array('net_sw_rad'),
                        params_coll.aggregate_array('net_lw_rad'),
                        params_coll.aggregate_array('Rn')]).getInfo()
@@ -487,7 +489,7 @@ params_info = ee.List([params_coll.aggregate_array('date'),
 params_dataframe = pd.DataFrame({'date':pd.to_datetime(params_info[0])})
 
 # Name of columns
-rad_cols = ['classes', 'season', 'albedo', 'emiss', 'rns', 'rnl', 'rn']
+rad_cols = ['classes', 'season', 'albedo', 'emiss', 'temp', 'rns', 'rnl', 'rn']
 count = 1
 
 # Iterate to populate columns

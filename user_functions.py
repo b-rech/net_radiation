@@ -373,8 +373,11 @@ def net_lw_rad(image):
     up = image.select('up_lw_rad')
     down = image.select('dw_lw_rad')
 
+    # Emissivity
+    emiss = image.select('emiss')
+
     # Net longwave radiation
-    budget = down.subtract(up)
+    budget = emiss.multiply(down).subtract(up)
 
     return image.addBands(budget.rename('net_lw_rad'))
 
