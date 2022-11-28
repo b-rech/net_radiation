@@ -404,72 +404,70 @@ rn_rad_seasonal_means = (rad_seasonal_means[['classes', 'season', 'rn']]
 
 # %% TIME SERIES
 
+def time_series_plot(data, param, ylabel):
+
+    sns.set_style('whitegrid')
+
+    classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
+
+    # Dataframe with mean values
+    radiation_means = (data.groupby(['date', 'classes', 'season'])
+                       .mean().reset_index(drop=False))
+    radiation_means['date'] = pd.to_datetime(radiation_means.date)
+
+    # Dictionary of colors for seasons
+    season_colors = {'Spring':'#ff7f00', 'Summer':'#de2d26',
+                     'Fall':'#33a02c', 'Winter':'#3182bd'}
+
+    # Seasons in order to be displayed
+    season_order = ['Spring', 'Summer', 'Fall', 'Winter']
+
+    # Crete grid
+    rad_time_grid = sns.FacetGrid(data=radiation_means, row='classes', aspect=3.5,
+                                  sharey=False, sharex=False, height=1.6)
+
+    # Scatterplot
+    rad_time_grid.map(sns.scatterplot, 'date', param, 'season',
+                      palette=season_colors, legend=True, edgecolor='black')
+
+    # Lineplot
+    rad_time_grid.map(sns.lineplot, 'date', param, alpha=0.3, color='black',
+                      zorder=0)
+
+    rad_time_grid.add_legend(ncol=4, loc='lower center', label_order=season_order)
+
+    # Add classes titles
+    for ax, title in zip(rad_time_grid.axes.flatten(), classes):
+        ax.set_title(title, fontweight='bold')
+
+    new_labels = ['Primavera', 'Verão', 'Outono', 'Inverno']
+    for t, l in zip(rad_time_grid._legend.texts, new_labels):
+        t.set_text(l)
+
+    rad_time_grid.set_xlabels(' ')
+    rad_time_grid.set_ylabels(ylabel)
+
+    return rad_time_grid
+
 # Data to long format
 rad_plot = (radiation_data.melt(id_vars=['date', 'classes', 'season'],
                                 value_vars=['rnl', 'rns', 'rn'],
                                 var_name='type', value_name='rad'))
 
-# Dataframe with mean values
-radiation_means = (radiation_data.groupby(['date', 'classes', 'season'])
-                   .mean().reset_index(drop=False))
-radiation_means['date'] = pd.to_datetime(radiation_means.date)
+time_series_plot(data=radiation_data, param='rns',
+                 ylabel='$R_n^S ~ (Wm^{-2})$')
+plt.tight_layout()
+# plt.savefig('time_series_rns.tif', dpi=300)
 
-# Dictionary of colors for seasons
-season_colors = {'Spring':'#ff7f00', 'Summer':'#de2d26',
-                 'Fall':'#33a02c', 'Winter':'#3182bd'}
+time_series_plot(data=radiation_data, param='rnl',
+                 ylabel='$R_n^L ~ (Wm^{-2})$')
+plt.tight_layout()
+# plt.savefig('time_series_rnl.tif', dpi=300)
 
-# Seasons in order to be displayed
-season_order = ['Spring', 'Summer', 'Fall', 'Winter']
-
-# Crete grid
-rad_time_grid = sns.FacetGrid(data=radiation_means, row='classes', aspect=6,
-                              sharey=False, sharex=False, height=1.6)
-
-# Scatterplot
-# rad_time_grid.map(sns.scatterplot, 'date', 'rn', 'season',
-#                   palette=season_colors, legend=True, edgecolor='black')
-
-# Lineplot
-# rad_time_grid.map(sns.lineplot, 'date', 'rn', alpha=0.3, color='black',
-#                   zorder=0)
-
-rad_time_grid.map(sns.lineplot, 'date', 'rnl', alpha=0.3, color='black',
-                  zorder=0)
-
-rad_time_grid.add_legend(ncol=4, loc='lower center', label_order=season_order)
-
-rad_time_grid.set(yscale='log')
-
-new_labels = ['Primavera', 'Verão', 'Outono', 'Inverno']
-for t, l in zip(rad_time_grid._legend.texts, new_labels):
-    t.set_text(l)
-
-rad_time_grid.set_xlabels(' ')
-rad_time_grid.set_ylabels('Radiação ($Wm^{-2}$)')
-
-
-def facetgrid_two_axes(*args, **kwargs):
-    data = radiation_means
-    dual_axis = kwargs.pop('dual_axis')
-    alpha = kwargs.pop('alpha', 0.2)
-    kwargs.pop('color')
-    ax = plt.gca()
-    if dual_axis:
-        ax2 = ax.twinx()
-        ax2.set_ylabel('Second Axis!')
-
-    ax.plot(data['date'],data['rns'], **kwargs, color='red',alpha=alpha)
-    if dual_axis:
-        ax2.plot(data['date'],data['rnl'], **kwargs, color='blue',alpha=alpha)
-
-rad_time_grid = sns.FacetGrid(data=radiation_means, row='classes', aspect=6,
-                              sharey=False, sharex=False, height=1.6)
-rad_time_grid.map(facetgrid_two_axes, dual_axis=True)
-
-grid_test = sns.FacetGrid(data=radiation_means, col='classes', col_wrap=4,
-                              sharey=False, sharex=False)
-
-grid_test.map(sns.scatterplot, 'rnl', 'rns')
+time_series_plot(data=radiation_data, param='rn',
+                 ylabel='$R_n ~ (Wm^{-2})$')
+plt.tight_layout()
+# plt.savefig('time_series_rn.tif', dpi=300)
 
 
 # %% RELATION BETWEEN SHORT AND LONG BUDGETS
