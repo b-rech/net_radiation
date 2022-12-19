@@ -31,7 +31,7 @@ plt.rcParams['figure.dpi'] = 300
 metadata = pd.read_csv('generated_data\\images_metadata.csv', sep=';',
                             decimal=',')
 metadata['date'] = pd.to_datetime(metadata.date)
-
+metadata['year'] = metadata.date.dt.year
 
 # Spectral data from samples
 spectral_data = pd.read_csv('generated_data\\spectral_data.csv', sep=';',
@@ -42,6 +42,8 @@ radiation_data = pd.read_csv('generated_data\\radiation_data.csv', sep=';',
                             decimal=',')
 radiation_data['date'] = pd.to_datetime(radiation_data.date)
 
+# Removal of a single observation with Rn < 0 (error)
+radiation_data = radiation_data[radiation_data.rn > 0]
 
 # %% PLOT - TEMPORAL DISTRIBUTION OF IMAGES
 
@@ -66,17 +68,17 @@ for year, axis in zip(
     sns.scatterplot(x='date', y=0,
                     data=metadata[metadata.year == year],
                     ax=ax[axis], legend=False, marker='s', hue='season',
-                    palette=['#ff7f00', '#de2d26', '#33a02c', '#3182bd'],
-                    hue_order=['Spring', 'Summer', 'Fall', 'Winter'],
+                    palette=['#de2d26', '#33a02c', '#3182bd', '#ff7f00'],
+                    hue_order=['Summer', 'Fall', 'Winter', 'Spring'],
                     edgecolor='black')
 
 # Legend handles
 handles = [Rectangle(xy=(0, 0), height=1, width=1, facecolor=color,
                      edgecolor='black', linewidth=.5)
-           for color in ['#ff7f00', '#de2d26', '#33a02c', '#3182bd']]
+           for color in ['#de2d26', '#33a02c', '#3182bd', '#ff7f00']]
 
 # Add legend
-plot.legend(handles=handles, labels=['Primavera', 'Verão', 'Outono', 'Inverno'],
+plot.legend(handles=handles, labels=['Verão', 'Outono', 'Inverno', 'Primavera'],
             loc='lower center', handlelength=.8, handleheight=.8, ncol=4)
 
 # Months (x axis)
@@ -108,9 +110,10 @@ spectral_grid = sns.FacetGrid(data=spectral_to_plot, col='classes',
                               sharex=False, sharey=False)
 
 
-# Mean points
+# Median points
 spectral_grid.map(sns.pointplot, 'bands', 'reflect', markers='.', join=False,
-                  errorbar=('pi', 95), order=spectral_cols, errwidth=1,
+                  estimator='median', errorbar=('pi', 95),
+                  order=spectral_cols, errwidth=1,
                   capsize=.4, n_boot=500000, color='black')
 
 
@@ -126,13 +129,13 @@ for ax, title in zip(spectral_grid.axes.flatten(), classes):
 plt.tight_layout()
 
 # Save figure
-# plt.savefig('spectral_signatures.tif', dpi=300)
+plt.savefig('spectral_signatures.tif', dpi=300)
 
 ### TABLE
 
-# Calculate means
+# Calculate medians
 spectral_signatures = (spectral_to_plot.groupby(['classes', 'bands'])
-                       .mean().reset_index())
+                       .median().reset_index())
 
 # Tranform to long format
 spectral_signatures = spectral_signatures.pivot(index='classes',
@@ -140,8 +143,8 @@ spectral_signatures = spectral_signatures.pivot(index='classes',
                                                 values='reflect').reset_index()
 
 # Save to csv
-# spectral_signatures.to_csv('generated_data\\spectral_signatures.csv', sep=';',
-#                            decimal=',', index=False)
+spectral_signatures.to_csv('generated_data\\spectral_signatures.csv', sep=';',
+                            decimal=',', index=False)
 
 
 # %% TABLE - NUMBER OF OBSERVATIONS
@@ -222,57 +225,6 @@ temp['var_coef'] = temp.sd/temp.temp
 # temp.to_csv('generated_data\\temperature_means.csv', decimal=',',
 #             sep=';')
 
-# %% PLOT - ALBEDO
-
-
-sns.set_theme(style='whitegrid')
-
-classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
-
-# Seasons in order to be displayed
-season_order = ['Spring', 'Summer', 'Fall', 'Winter']
-
-# Create plot
-sns.pointplot(data=radiation_data, x='classes', y='albedo', markers='.',
-              join=False, errorbar=('pi', 95), order=classes, errwidth=1,
-                  capsize=.4, n_boot=500000, color='black')
-
-sns.catplot(data=radiation_data, x='classes', y='albedo', kind='bar',
-              errorbar=('pi', 95), order=classes,
-                  n_boot=500000, facecolor='#d9d9d9', edgecolor='black',
-                  capsize=.4, errwidth=1)
-
-
-
-# Configure axes labels
-spectral_grid.set_xlabels('Banda')
-spectral_grid.set_ylabels('Reflectância')
-
-rad_mean_scenes = (radiation_data.groupby(['date', 'classes'])
-                   .mean().reset_index())
-
-albedo_grid = sns.FacetGrid(data=radiation_data, row='classes', aspect=6,
-                            sharey=False, sharex=False, height=1.6)
-
-albedo_grid.map(sns.lineplot, 'date', 'albedo', errorbar=('pi', 90), marker='.')
-
-# Lineplot
-albedo_grid.map(sns.lineplot, 'date', 'albedo', alpha=0.3, color='black',
-                  zorder=0)
-
-
-# Add classes titles and format y ticks
-for ax, title in zip(spectral_grid.axes.flatten(), classes):
-    ax.set_title(title, fontweight='bold')
-    ax.yaxis.set_major_formatter(tkr.FuncFormatter(lambda y, p: f'{y:.2f}'))
-
-plt.tight_layout()
-
-# Save plot as tif
-# plt.savefig('spectral_signatures.tif', dpi=300)
-
-
-
 
 # %% SEASONAL BOXPLOT FUNCTION
 
@@ -289,15 +241,15 @@ def boxplot_seasons(param, ylabel):
 
     # Create plot - boxplot by season
     season_boxplot = sns.FacetGrid(data=radiation_data, col='classes',
-                                   sharex=True, sharey=False,col_wrap=3,
-                                   col_order=classes, aspect=1, height=2.2)
+                                   sharex=True, sharey=True,col_wrap=3,
+                                   col_order=classes, aspect=1, height=2.5)
 
     # Dictionary of colors for seasons
     season_colors = {'Spring':'#ff7f00', 'Summer':'#de2d26',
                      'Fall':'#33a02c', 'Winter':'#3182bd'}
 
     # Seasons in order to be displayed
-    season_order = ['Spring', 'Summer', 'Fall', 'Winter']
+    season_order = ['Summer', 'Fall', 'Winter', 'Spring']
 
     # Map plots to grid
     season_boxplot.map(sns.boxplot, 'season', param,'season', showmeans=True,
@@ -323,13 +275,15 @@ def boxplot_seasons(param, ylabel):
     # Add classes titles
     for ax, title in zip(season_boxplot.axes.flatten(), classes):
         ax.set_title(title, fontweight='bold')
+        ax.get_yaxis().set_minor_locator(tkr.AutoMinorLocator())
+        ax.grid(visible=True, which='minor', linewidth=0.4)
 
     # Set x tick labels
     season_boxplot.set_xticklabels([None]*4)
 
     season_boxplot.add_legend(ncol=1, loc=(.8, .10), title='Estações')
 
-    new_labels = ['Primavera', 'Verão', 'Outono', 'Inverno']
+    new_labels = ['Verão', 'Outono', 'Inverno', 'Primavera']
     for t, l in zip(season_boxplot._legend.texts, new_labels):
         t.set_text(l)
 
@@ -355,52 +309,89 @@ plt.savefig('boxplot_rn.tif', dpi=300)
 
 # %% TABLE - SHORTWAVE NET RADIATION PER SEASON
 
-# Get means
-rad_seasonal_means = (radiation_data.groupby(['classes', 'season'])
-                      .mean().reset_index())
+# Get medians
+rad_seasonal_medians = (radiation_data.groupby(['classes', 'season'])
+                      .median().reset_index())
 
 # Transform table
-sw_rad_seasonal_means = (rad_seasonal_means[['classes', 'season', 'rns']]
-                         .pivot(index='season',columns='classes',
-                                values='rns'))
+sw_rad_seasonal_medians = (rad_seasonal_medians[['classes', 'season', 'rns']]
+                           .pivot(index='season',columns='classes',
+                                  values='rns'))
 
 # # Save to csv
-# sw_rad_seasonal_means.to_csv('generated_data\\mean_net_shortwave.csv',
-#                               sep=';', decimal=',')
+sw_rad_seasonal_medians.to_csv('generated_data\\median_net_shortwave.csv',
+                               sep=';', decimal=',')
 
 
 # %% TABLE - LONGWAVE NET RADIATION PER SEASON
 
-# Get means
-rad_seasonal_means = (radiation_data.groupby(['classes', 'season'])
-                      .mean().reset_index())
+# Get medians
+rad_seasonal_medians = (radiation_data.groupby(['classes', 'season'])
+                        .median().reset_index())
 
 # Transform table
-lw_rad_seasonal_means = (rad_seasonal_means[['classes', 'season', 'rnl']]
-                         .pivot(index='season',columns='classes',
-                                values='rnl'))
+lw_rad_seasonal_medians = (rad_seasonal_medians[['classes', 'season', 'rnl']]
+                           .pivot(index='season',columns='classes',
+                                  values='rnl'))
 
 # Save to csv
-# lw_rad_seasonal_means.to_csv('generated_data\\mean_net_longwave.csv',
-#                               sep=';', decimal=',')
+lw_rad_seasonal_medians.to_csv('generated_data\\median_net_longwave.csv',
+                               sep=';', decimal=',')
 
 
 # %% TABLE - ALL-WAVE NET RADIATION PER SEASON
 
-# Get means
-rad_seasonal_means = (radiation_data.groupby(['classes', 'season'])
-                      .mean().reset_index())
+# Get medians
+rad_seasonal_medians = (radiation_data.groupby(['classes', 'season'])
+                        .median().reset_index())
 
 # Transform table
-rn_rad_seasonal_means = (rad_seasonal_means[['classes', 'season', 'rn']]
-                         .pivot(index='season',columns='classes',
-                                values='rn'))
+rn_rad_seasonal_medians = (rad_seasonal_medians[['classes', 'season', 'rn']]
+                           .pivot(index='season',columns='classes',
+                                  values='rn'))
 
-# # Save to csv
-# rn_rad_seasonal_means.to_csv('generated_data\\mean_net_allwave.csv',
-#                              sep=';', decimal=',')
+# Save to csv
+rn_rad_seasonal_medians.to_csv('generated_data\\median_net_allwave.csv',
+                               sep=';', decimal=',')
 
 
+# %% TABLE - ANNUAL WEIGHTED MEANS
+
+# Define function
+def weighted_means(data, param, weights):
+
+    data['weight'] = [1/weights[x] for x in data.season]
+
+    data['param_weighted'] = data[param]*data.weight
+
+    rad_weight_means = (data.groupby(['classes']).sum().reset_index())
+
+    rad_weight_means['weighted_mean'] = (rad_weight_means.param_weighted/
+                                         rad_weight_means.weight)
+
+    return rad_weight_means[['classes', 'weighted_mean']]
+
+# Weights are the number os images
+weights = {'Summer':13, 'Fall':36, 'Winter':37, 'Spring':7}
+
+# Shortwave means
+shortwave_means = weighted_means(radiation_data, 'rns', weights)
+
+# Longwave means
+longwave_means = weighted_means(radiation_data, 'rnl', weights)
+
+# All wave means
+allwave_means = weighted_means(radiation_data, 'rn', weights)
+
+# Dataframe with all means
+annual_means = pd.DataFrame({'classes':shortwave_means.classes,
+                             'rns':shortwave_means.weighted_mean,
+                             'rnl':longwave_means.weighted_mean,
+                             'rn':allwave_means.weighted_mean})
+
+# Save to csv
+annual_means.to_csv('generated_data\\annual_weighted_means.csv',
+                    sep=';', decimal=',')
 
 # %% TIME SERIES
 

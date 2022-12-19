@@ -25,7 +25,6 @@ ee.Initialize()
 
 # %% CLOUD MASK
 
-# Apply a cloud mask to the images
 def cloud_mask(image):
 
     # Select cloud band
@@ -38,7 +37,6 @@ def cloud_mask(image):
 
 # %% APPLY SCALE AND OFFSET FACTORS
 
-# Apply scale factors to L8 reflectance and thermal bands
 def scale_L8(image):
 
     optical_bands = image.select('SR_B.').multiply(0.0000275).add(-0.2)
@@ -60,13 +58,7 @@ def pixels_coords(image):
 
 # %% RETRIEVE DAY OF YEAR B, E AND DECLINATION
 
-# Calculate parameters B, E and declination
 def declination(image):
-
-    """
-    This function calculates B, E and declination values and adds
-    to the image metadata
-    """
 
     # Retrieve month
     month = image.date().get('month')
@@ -117,7 +109,6 @@ def declination(image):
 
 # %% RETRIEVE SOLAR ZENITH ANGLE COSINE OVER A HORIZONTAL SURFACE
 
-# Calculate cos_theta_hor
 def cos_theta_hor(image):
 
     # Band with pixel latitudes (radians)
@@ -140,7 +131,6 @@ def cos_theta_hor(image):
 
 # %% RETRIEVE SOLAR INCIDENCE ANGLE COSINE
 
-# Calculate theta_rel
 def cos_theta_rel(image):
 
     # Band with pixel latitudes (radians)
@@ -189,7 +179,7 @@ def atm_pressure(image):
 
 # %% PRECIPITABLE WATER
 
-# Function to calculate precipitable water
+# Function to calculate precipitable water (mm)
 def prec_water(image):
 
     # Retrieve saturation vapor pressure and relative humidity
@@ -214,7 +204,6 @@ def prec_water(image):
 
 # %% ATMOSPHERIC TRANSMISSIVITY
 
-# Calculates atmospheric transmissivity
 def atm_trans(image):
 
     # Retrieve required parameters:
@@ -242,7 +231,6 @@ def atm_trans(image):
 
 # %% DOWNWARD SHORTWAVE RADIATION
 
-# Calculates downward shortwave radiation
 def dw_sw_rad(image):
 
     # Solar constant
@@ -290,7 +278,6 @@ def get_albedo(image):
 
 # %% UPWARD SHORTWAVE RADIATION
 
-# Calculates upward shortwave radiation
 def up_sw_rad(image):
 
     # Retrieve reflected radiation
@@ -301,7 +288,6 @@ def up_sw_rad(image):
 
 # %% NET SHORTWAVE RADIATION
 
-# Calculates shortwave radiation budget
 def net_sw_rad(image):
 
     # Upward and downward fluxes
@@ -316,7 +302,6 @@ def net_sw_rad(image):
 
 # %% ATMOSPHERIC EMISSIVITY
 
-# Calculates atmospheric emissivity
 def atm_emiss(image):
 
     # Select atmospheric transmissivity
@@ -330,7 +315,6 @@ def atm_emiss(image):
 
 # %% DOWNWARD LONGWAVE RADIATION
 
-# Calculates incident longwave radiation flux
 def dw_lw_rad(image):
 
     # Select temperature band (scaled to K)
@@ -348,7 +332,6 @@ def dw_lw_rad(image):
 
 # %% UPWARD LONGWAVE RADIATION
 
-# Calculates the upward longwave radiation
 def up_lw_rad(image):
 
     # Select temperature band (scaled to K)
@@ -366,7 +349,6 @@ def up_lw_rad(image):
 
 # %% NET LONGWAVE RADIATION
 
-# Calculates longwave radiation budget
 def net_lw_rad(image):
 
     # Upward and downward fluxes
@@ -384,7 +366,6 @@ def net_lw_rad(image):
 
 # %% ALL-WAVE NET RADIATION
 
-# Calculate all-wave radiation budget
 def all_wave_rn(image):
 
     # Downward shortwave radiation
@@ -441,21 +422,18 @@ def set_season(image):
 
 # %% GENERATE METADATA DATAFRAME
 
-# Function to generate a metadata dataframe
 def list_info_df(properties_list):
-
-    """
-    This function selects important attributes from a metadata list and
-    transforms it in a Pandas dataframe.
-    """
 
     # Variable initialization
     ids = []
+    date = []
     time = []
     season = []
     cloudiness = []
-    path = []
-    row = []
+    declination = []
+    earth_sun_dist = []
+    air_temp = []
+    rel_hum = []
 
     # Information retrieval
     for j in range(0, len(properties_list)):
@@ -463,8 +441,11 @@ def list_info_df(properties_list):
         ids.append(
             properties_list[j]['properties']['system:index'])
 
-        time.append(
+        date.append(
             properties_list[j]['properties']['system:time_start'])
+
+        time.append(
+            properties_list[j]['properties']['SCENE_CENTER_TIME'])
 
         season.append(
             properties_list[j]['properties']['SEASON'])
@@ -472,21 +453,29 @@ def list_info_df(properties_list):
         cloudiness.append(
             properties_list[j]['properties']['CLOUDINESS'])
 
-        path.append(
-            properties_list[j]['properties']['WRS_PATH'])
+        declination.append(
+            properties_list[j]['properties']['DECLINATION'])
 
-        row.append(
-            properties_list[j]['properties']['WRS_ROW'])
+        earth_sun_dist.append(
+            properties_list[j]['properties']['EARTH_SUN_DISTANCE'])
 
+        air_temp.append(
+            properties_list[j]['properties']['AIR_TEMP'])
+
+        rel_hum.append(
+            properties_list[j]['properties']['REL_HUM'])
 
     # Dataframe's generation
     infos = pd.DataFrame({
         'id':ids,
-        'date':time,
+        'date':date,
+        'time':time,
         'season':season,
         'cloudiness':cloudiness,
-        'path':path,
-        'row':row})
+        'declination':declination,
+        'earth_sun_dist':earth_sun_dist,
+        'air_temp':air_temp,
+        'rel_hum':rel_hum})
 
     infos['date'] = pd.to_datetime(infos['date'], unit='ms')
 
@@ -509,11 +498,11 @@ def shape_to_feature_coll(shapefile):
     # Iterate over each polygon
     for pol in range(0, len(shapefile)):
 
-        # Selection of the feature of interest
+        # Select the feature of interest
         polygon = (np.dstack(shapefile.geometry[pol].geoms[0]
                              .exterior.coords.xy).tolist())
 
-        # Creation of a ee.Feature with the external coordinates
+        # Create a ee.Feature with the external coordinates
         geometry = ee.Feature(ee.Geometry.Polygon(polygon))
 
         geometry = geometry.set({'classes':shapefile.classes[pol]})

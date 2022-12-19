@@ -241,6 +241,10 @@ met_data['ids'] = met_data.date + '-H' + met_data.hour.astype(int).astype(str)
 met_data['sat_vp'] = (0.6112*np.exp(
     17.62*met_data.air_temp/(243.12+met_data.air_temp)))
 
+# Create ee.Dictionary with date/hour ids and associated air temperature
+ta_values = ee.Dictionary.fromLists(keys=met_data.ids.values.tolist(),
+                                    values=met_data.air_temp.values.tolist())
+
 # Create ee.Dictionary with date/hour ids and associated vapor pressure
 vp_values = ee.Dictionary.fromLists(keys=met_data.ids.values.tolist(),
                                     values=met_data.sat_vp.values.tolist())
@@ -250,7 +254,7 @@ hum_values = ee.Dictionary.fromLists(keys=met_data.ids.values.tolist(),
                                     values=met_data.rel_hum.values.tolist())
 
 
-# Function to assign saturation vapor pressure and relative humidity
+# Function to assign Ta, saturation vapor pressure and relative humidity
 # values to each image
 def vp_hum(image):
 
@@ -263,8 +267,10 @@ def vp_hum(image):
     date_hour = ee.String(
         image.get('DATE_ACQUIRED')).cat(ee.String('-H').cat(hour))
 
-    return image.set({'SAT_VP':vp_values.getNumber(date_hour),
-                      'REL_HUM':hum_values.getNumber(date_hour)})
+    return image.set({
+        'AIR_TEMP':ta_values.getNumber(date_hour),
+        'SAT_VP':vp_values.getNumber(date_hour),
+        'REL_HUM':hum_values.getNumber(date_hour)})
 
 
 # Map functions over the collection to retrieve:
@@ -391,14 +397,13 @@ dataset19 = dataset18.map(set_season)
 
 # %% IMAGES METADATA
 
-# Retrieve collection metadata
+# Retrieve collection metadata and selected meteorological data
 info_list = dataset19.getInfo()['features']
 images_metadata = list_info_df(info_list)
-images_metadata['year'] = images_metadata.date.dt.year
 
 # Save to csv
-images_metadata.to_csv('generated_data\\images_metadata.csv', sep=';',
-                       decimal=',', index=False)
+# images_metadata.to_csv('generated_data\\images_metadata.csv', sep=';',
+#                        decimal=',', index=False)
 
 
 # %% SAMPLES SPECTRAL SIGNATURES
