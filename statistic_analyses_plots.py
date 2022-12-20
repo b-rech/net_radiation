@@ -129,7 +129,7 @@ for ax, title in zip(spectral_grid.axes.flatten(), classes):
 plt.tight_layout()
 
 # Save figure
-plt.savefig('spectral_signatures.tif', dpi=300)
+# plt.savefig('spectral_signatures.tif', dpi=300)
 
 ### TABLE
 
@@ -143,8 +143,8 @@ spectral_signatures = spectral_signatures.pivot(index='classes',
                                                 values='reflect').reset_index()
 
 # Save to csv
-spectral_signatures.to_csv('generated_data\\spectral_signatures.csv', sep=';',
-                            decimal=',', index=False)
+# spectral_signatures.to_csv('generated_data\\spectral_signatures.csv', sep=';',
+#                             decimal=',', index=False)
 
 
 # %% TABLE - NUMBER OF OBSERVATIONS
@@ -203,8 +203,8 @@ emiss = emiss[['emiss', 'sd']]
 emiss['var_coef'] = emiss.sd/emiss.emiss
 
 # Save to csv
-emiss.to_csv('generated_data\\emiss_means.csv', decimal=',',
-              sep=';')
+# emiss.to_csv('generated_data\\emiss_means.csv', decimal=',',
+#               sep=';')
 
 
 # %% TABLE - MEAN TEMPERATURE
@@ -236,7 +236,6 @@ def boxplot_seasons(param, ylabel):
     classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
 
     # Facecolor and edgecolor
-    rn_boxplot_fc = 'black'
     rn_boxplot_ec = 'black'
 
     # Create plot - boxplot by season
@@ -319,8 +318,8 @@ sw_rad_seasonal_medians = (rad_seasonal_medians[['classes', 'season', 'rns']]
                                   values='rns'))
 
 # # Save to csv
-sw_rad_seasonal_medians.to_csv('generated_data\\median_net_shortwave.csv',
-                               sep=';', decimal=',')
+# sw_rad_seasonal_medians.to_csv('generated_data\\median_net_shortwave.csv',
+#                                 sep=';', decimal=',')
 
 
 # %% TABLE - LONGWAVE NET RADIATION PER SEASON
@@ -335,8 +334,8 @@ lw_rad_seasonal_medians = (rad_seasonal_medians[['classes', 'season', 'rnl']]
                                   values='rnl'))
 
 # Save to csv
-lw_rad_seasonal_medians.to_csv('generated_data\\median_net_longwave.csv',
-                               sep=';', decimal=',')
+# lw_rad_seasonal_medians.to_csv('generated_data\\median_net_longwave.csv',
+#                                 sep=';', decimal=',')
 
 
 # %% TABLE - ALL-WAVE NET RADIATION PER SEASON
@@ -351,8 +350,8 @@ rn_rad_seasonal_medians = (rad_seasonal_medians[['classes', 'season', 'rn']]
                                   values='rn'))
 
 # Save to csv
-rn_rad_seasonal_medians.to_csv('generated_data\\median_net_allwave.csv',
-                               sep=';', decimal=',')
+# rn_rad_seasonal_medians.to_csv('generated_data\\median_net_allwave.csv',
+#                                 sep=';', decimal=',')
 
 
 # %% TABLE - ANNUAL WEIGHTED MEANS
@@ -390,8 +389,8 @@ annual_means = pd.DataFrame({'classes':shortwave_means.classes,
                              'rn':allwave_means.weighted_mean})
 
 # Save to csv
-annual_means.to_csv('generated_data\\annual_weighted_means.csv',
-                    sep=';', decimal=',')
+# annual_means.to_csv('generated_data\\annual_weighted_means.csv',
+#                     sep=';', decimal=',')
 
 # %% TIME SERIES
 
@@ -401,37 +400,35 @@ def time_series_plot(data, param, ylabel):
 
     classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
 
-    # Dataframe with mean values
-    radiation_means = (data.groupby(['date', 'classes', 'season'])
-                       .mean().reset_index(drop=False))
-    radiation_means['date'] = pd.to_datetime(radiation_means.date)
+    # Dataframe with median values
+    radiation_medians = (data.groupby(['date', 'classes', 'season'])
+                         .median().reset_index(drop=False))
+    radiation_medians['date'] = pd.to_datetime(radiation_medians.date)
 
     # Dictionary of colors for seasons
     season_colors = {'Spring':'#ff7f00', 'Summer':'#de2d26',
                      'Fall':'#33a02c', 'Winter':'#3182bd'}
 
     # Seasons in order to be displayed
-    season_order = ['Spring', 'Summer', 'Fall', 'Winter']
+    season_order = ['Summer', 'Fall', 'Winter', 'Spring']
 
     # Crete grid
-    rad_time_grid = sns.FacetGrid(data=radiation_means, row='classes', aspect=3.5,
-                                  sharey=False, sharex=False, height=1.6)
+    rad_time_grid = sns.FacetGrid(data=radiation_medians, row='classes',
+                                  aspect=3.5, sharey=True,
+                                  sharex=False, height=1.6)
 
     # Scatterplot
     rad_time_grid.map(sns.scatterplot, 'date', param, 'season',
                       palette=season_colors, legend=True, edgecolor='black')
 
-    # Lineplot
-    rad_time_grid.map(sns.lineplot, 'date', param, alpha=0.3, color='black',
-                      zorder=0)
-
-    rad_time_grid.add_legend(ncol=4, loc='lower center', label_order=season_order)
+    rad_time_grid.add_legend(ncol=4, loc='lower center',
+                             label_order=season_order)
 
     # Add classes titles
     for ax, title in zip(rad_time_grid.axes.flatten(), classes):
         ax.set_title(title, fontweight='bold')
 
-    new_labels = ['Primavera', 'Verão', 'Outono', 'Inverno']
+    new_labels = ['Verão', 'Outono', 'Inverno', 'Primavera']
     for t, l in zip(rad_time_grid._legend.texts, new_labels):
         t.set_text(l)
 
@@ -475,14 +472,14 @@ classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
 # List to save correlations
 corr = []
 
-# Pearson correlations
+# Spearman correlations
 for classe in classes:
 
     # Select class
     data = rad_image_means[rad_image_means.classes==classe]
 
     # Append correlation to list
-    corr.append(data[['rns', 'rnl']].corr().iloc[0, 1])
+    corr.append(data[['rns', 'rnl']].corr(method='spearman').iloc[0, 1])
 
 # Correlation grid
 corr_grid = sns.FacetGrid(data=rad_image_means, col='classes', col_wrap=3,
@@ -500,13 +497,13 @@ corr_grid.set_ylabels('$R_n^S ~ (Wm^{-2})$')
 # Add classes titles and correlation coefficients
 for ax, title, cor in zip(corr_grid.axes.flatten(), classes, corr):
     ax.set_title(title, fontweight='bold')
-    ax.annotate('r = ' + str(format(cor, '.2f')),
+    ax.annotate('$r_S$ = ' + str(format(cor, '.2f')),
                 xy=(0.7, 0.85), xycoords='axes fraction',
                 bbox=dict(boxstyle="square", fc="w", ec='black'))
 
 plt.tight_layout()
 
-plt.savefig('correlation_rad.tif', dpi=300)
+# plt.savefig('correlation_rad.tif', dpi=300)
 
 # %% KRUSKAL-WALIS TESTS
 

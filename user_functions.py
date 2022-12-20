@@ -11,13 +11,13 @@ Author: Bruno Rech (b.rech@outlook.com)
 SCRIPT 1/3 - AUXILIAR FUNCTIONS
 """
 
+
 # %% INITIALIZATION
 
 # Required libraries
 import ee
 import pandas as pd
 import numpy as np
-import geemap
 
 # GEE initialization
 ee.Initialize()
@@ -39,7 +39,10 @@ def cloud_mask(image):
 
 def scale_L8(image):
 
+    # Scale and offset optical bands
     optical_bands = image.select('SR_B.').multiply(0.0000275).add(-0.2)
+
+    # Scale and offset thermal band (LST)
     thermal_band = image.select('ST_B10').multiply(0.00341802).add(149)
 
     return (image.addBands(optical_bands, overwrite=True)
@@ -48,9 +51,9 @@ def scale_L8(image):
 
 # %% CREATE PIXEL LAT/LONG BANDS
 
-# Create bands with pixel coordinates (radians)
 def pixels_coords(image):
 
+    # Generate a band with pixel coordinates (radians)
     coords = image.pixelLonLat().multiply(np.pi/180).rename(['long', 'lat'])
 
     return image.addBands(coords)
@@ -164,7 +167,6 @@ def cos_theta_rel(image):
 
 # %% RETRIEVE ATMOSPHERIC PRESSURE
 
-# Calculate atmospheric pressure (kPa)
 def atm_pressure(image):
 
     # Select elevation band
@@ -179,7 +181,6 @@ def atm_pressure(image):
 
 # %% PRECIPITABLE WATER
 
-# Function to calculate precipitable water (mm)
 def prec_water(image):
 
     # Retrieve saturation vapor pressure and relative humidity
@@ -195,7 +196,7 @@ def prec_water(image):
               .add(1.0016)
               .multiply(sat_vp).multiply(rel_hum))
 
-    # Calculate precipitable water
+    # Calculate precipitable water (mm)
     prec_w = act_vp.multiply(p).multiply(0.14).add(2.1)
 
     # Add band 'prec_water' to the image
@@ -323,7 +324,7 @@ def dw_lw_rad(image):
     # Select atmospheric emissivity band
     emiss = image.select('atm_emiss')
 
-    # Apply Stefan-Boltzmann equation
+    # Apply Stefan-Boltzmann equation (W/m²)
     dw_lw_rad = temp.pow(4).multiply(emiss).multiply(5.67E-8)
 
     # Add band to scene
@@ -340,7 +341,7 @@ def up_lw_rad(image):
     # Select emissivity band
     emiss = image.select('emiss')
 
-    # Apply Stefan-Boltzmann equation
+    # Apply Stefan-Boltzmann equation (W/m²)
     up_lw_rad = temp.pow(4).multiply(emiss).multiply(5.67E-8)
 
     # Add band to scene
@@ -358,7 +359,7 @@ def net_lw_rad(image):
     # Emissivity
     emiss = image.select('emiss')
 
-    # Net longwave radiation
+    # Net longwave radiation (W/m²)
     budget = emiss.multiply(down).subtract(up)
 
     return image.addBands(budget.rename('net_lw_rad'))
@@ -383,7 +384,7 @@ def all_wave_rn(image):
     # Surface emissivity
     emiss = image.select('emiss')
 
-    # Instantaneous all-wave net radiation
+    # Instantaneous all-wave net radiation (W/m²)
     Rn = dw_sw.subtract(up_sw).add(emiss.multiply(dw_lw)).subtract(up_lw)
 
     return image.addBands(Rn.rename('Rn'))

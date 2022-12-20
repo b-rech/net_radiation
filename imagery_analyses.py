@@ -26,7 +26,7 @@ import geemap
 from user_functions import *
 
 # GEE authentication and initialization
-#ee.Authenticate()
+# ee.Authenticate()
 ee.Initialize()
 
 
@@ -70,7 +70,7 @@ met_data = (met_data.iloc[:, [0, 1, 3, 7, 9, 18]]
 met_data.columns = ['date', 'hour', 'p_atm', 'rad', 'air_temp', 'rel_hum']
 
 # Convert data
-met_data['hour'] = met_data.loc[:, 'hour']/100
+met_data['hour'] = met_data.loc[:, 'hour']/100 - 3
 met_data['rel_hum'] = met_data.loc[:, 'rel_hum']/100
 
 # Select dates between 11h and 15h only (L8 passes usually around 13h)
@@ -258,10 +258,8 @@ hum_values = ee.Dictionary.fromLists(keys=met_data.ids.values.tolist(),
 # values to each image
 def vp_hum(image):
 
-    # Image's hour of acquisition
-    hour = (image.date().get('hour')
-            .add(image.date().get('minute').divide(60))
-            .round().format('%.0f'))
+    # Image's hour after acquisition
+    hour = (image.date().get('hour').add(1).format('%.0f'))
 
     # ID in the format yyyy-mm-dd-Hhh
     date_hour = ee.String(
@@ -377,23 +375,26 @@ dataset18 = dataset17.map(all_wave_rn)
 # Set season (from user_functions)
 dataset19 = dataset18.map(set_season)
 
-# Extraction of mean seasonal data
-# for season in ['Spring', 'Summer', 'Fall', 'Winter']:
 
-#     mean_image = (dataset19.filter(ee.Filter.eq('SEASON', season))
-#                   .select(['albedo', 'net_sw_rad', 'net_lw_rad', 'Rn'])
-#                   .mean())
+# %% GENERATE AND EXTRACT MEAN IMAGES
 
-#     geemap.ee_export_image(mean_image,
-#                            filename=f'generated_data\\mean_{season}.tif',
-#                            region=basin_geom, scale=30, file_per_band=False)
+for season in ['Spring', 'Summer', 'Fall', 'Winter']:
 
-# # Extraction of general means
-# geemap.ee_export_image((dataset19
-#                         .select(['albedo', 'net_sw_rad', 'net_lw_rad', 'Rn'])
-#                         .mean()),
-#                        filename=f'generated_data\\mean_all_images.tif',
-#                        region=basin_geom, scale=30, file_per_band=False)
+    mean_image = (dataset19.filter(ee.Filter.eq('SEASON', season))
+                  .select(['albedo', 'net_sw_rad', 'net_lw_rad', 'Rn'])
+                  .mean())
+
+    geemap.ee_export_image(mean_image,
+                            filename=f'generated_data\\mean_{season}.tif',
+                            region=basin_geom, scale=30, file_per_band=False)
+
+# Extraction of general mean image
+geemap.ee_export_image((dataset19
+                        .select(['albedo', 'net_sw_rad', 'net_lw_rad', 'Rn'])
+                        .mean()),
+                        filename=f'generated_data\\mean_all_images.tif',
+                        region=basin_geom, scale=30, file_per_band=False)
+
 
 # %% IMAGES METADATA
 
@@ -403,7 +404,7 @@ images_metadata = list_info_df(info_list)
 
 # Save to csv
 # images_metadata.to_csv('generated_data\\images_metadata.csv', sep=';',
-#                        decimal=',', index=False)
+#                         decimal=',', index=False)
 
 
 # %% SAMPLES SPECTRAL SIGNATURES
@@ -452,8 +453,8 @@ for i in spectral_cols:
     count += 1
 
 # Save to csv
-spectral_dataframe.to_csv('generated_data\\spectral_data.csv',
-                          decimal=',', sep=';', index=False)
+# spectral_dataframe.to_csv('generated_data\\spectral_data.csv',
+#                           decimal=',', sep=';', index=False)
 
 
 # %% EXTRACTION OF PARAMETERS OF INTEREST
