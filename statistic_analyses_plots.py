@@ -462,9 +462,9 @@ plt.tight_layout()
 
 sns.set_style('whitegrid')
 
-# Mean values per scene
-rad_image_means = (radiation_data.groupby(['date', 'classes', 'season'])
-                   .mean().reset_index())
+# Median values per scene
+rad_image_medians = (radiation_data.groupby(['date', 'classes', 'season'])
+                     .median().reset_index())
 
 # Classes
 classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
@@ -476,13 +476,13 @@ corr = []
 for classe in classes:
 
     # Select class
-    data = rad_image_means[rad_image_means.classes==classe]
+    data = rad_image_medians[rad_image_medians.classes==classe]
 
     # Append correlation to list
     corr.append(data[['rns', 'rnl']].corr(method='spearman').iloc[0, 1])
 
 # Correlation grid
-corr_grid = sns.FacetGrid(data=rad_image_means, col='classes', col_wrap=3,
+corr_grid = sns.FacetGrid(data=rad_image_medians, col='classes', col_wrap=3,
                           col_order=classes, sharex=False, sharey=False)
 
 # Map plots
@@ -513,9 +513,9 @@ def kruskal_wallis(input_data, param):
     # Classes
     classes = ['DUN','FOD', 'LCP', 'LCR', 'RAA', 'SIL', 'URB', 'VHE']
 
-    # Radiation data means per scene
-    mean_rad_data = (input_data.groupby(['date', 'classes', 'season'])
-                     .mean().reset_index())
+    # Radiation data medians per scene
+    median_rad_data = (input_data.groupby(['date', 'classes', 'season'])
+                     .median().reset_index())
 
     statistics = []
     pvalues = []
@@ -523,7 +523,7 @@ def kruskal_wallis(input_data, param):
     for classe in classes:
 
         # Filtered data for the selected class
-        data = mean_rad_data[mean_rad_data.classes==classe]
+        data = median_rad_data[median_rad_data.classes==classe]
 
         # Spring samples
         spring = data[data.season=='Spring'][param].tolist()
@@ -561,13 +561,13 @@ def dunn_test(input_data, param):
     dunn_test_results = pd.DataFrame(
         columns=['Spring', 'Summer', 'Fall', 'Winter', 'classes'])
 
-    # Radiation data means per scene
-    mean_rad_data = (input_data.groupby(['date', 'classes', 'season'])
-                     .mean().reset_index())
+    # Radiation data medians per scene
+    median_rad_data = (input_data.groupby(['date', 'classes', 'season'])
+                     .median().reset_index())
 
     for classe in classes:
 
-        data = mean_rad_data[mean_rad_data.classes==classe]
+        data = median_rad_data[median_rad_data.classes==classe]
 
         test_output = (sp.posthoc_dunn(data, val_col=param, group_col='season',
                                       p_adjust='bonferroni')
